@@ -4,7 +4,6 @@ import pandas as pd
 def load_titanic():
     df = pd.read_csv("data/Titanic.csv")
     df = df.drop(columns=["PassengerId", "Name", "Ticket", "Cabin"])
-    df["Age"] = df["Age"].round()
     return df
 
 

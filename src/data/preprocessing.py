@@ -1,114 +1,153 @@
 import pandas as pd
 import numpy as np
-from typing import Tuple, Dict
+from typing import Tuple
+from enum import Enum
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+
+from src.data.loaders import load_titanic, load_adult, load_car
+
+
+class Dataset(Enum):
+    TITANIC = 0
+    ADULT = 1
+    CARSALES = 2
 
 
 class DataPreprocessor:
     """
-    Uniwersalny preprocessing dla wszystkich datasetów.
-    Nie imputuje braków — robią to strategie missing values.
+    Dataset-aware preprocessing.
+    Nie imputuje braków.
+    Nie koduje na siłę kategorii (drzewo obsługuje mixed types).
     """
 
-    def __init__(
-        self, target_column: str, test_size: float = 0.2, random_state: int = 42
-    ):
-        self.target_column = target_column
+    def __init__(self, test_size: float = 0.2, random_state: int = 42):
         self.test_size = test_size
         self.random_state = random_state
-        self.encoders: Dict[str, LabelEncoder] = {}
 
-    # --------------------------------------------------
-    # LOADING
-    # --------------------------------------------------
-    def load_dataset(self, path: str) -> pd.DataFrame:
-        df = pd.read_csv(path)
+    # ======================================================
+    # TITANIC
+    # ======================================================
+    def _prepare_titanic(self):
+        df = load_titanic()
 
-        # standardyzacja braków
-        df = df.replace(["?", "NA", "N/A", "na", "null"], np.nan)
+        # standaryzacja braków
+        df = df.replace(["", "?", "NA", "N/A", "na", "null"], np.nan)
 
-        return df
+        # Age -> zaokrąglenie
+        if "Age" in df.columns:
+            df["Age"] = df["Age"].round()
 
-    # --------------------------------------------------
-    # TARGET SPLIT
-    # --------------------------------------------------
-    def split_features_target(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series]:
-        X = df.drop(columns=[self.target_column])
-        y = df[self.target_column]
+        target = "Survived"
+        X = df.drop(columns=[target])
+        y = df[target]
+
         return X, y
 
-    # --------------------------------------------------
-    # CATEGORICAL ENCODING
-    # --------------------------------------------------
-    def _encode_column(self, series: pd.Series, col: str) -> pd.Series:
-        """
-        Label encoding zachowujący NaN.
-        """
-        le = LabelEncoder()
+    # ======================================================
+    # ADULT
+    # ======================================================
+    def _prepare_adult(self):
+        df = load_adult()
 
-        mask = series.notna()
-        encoded = series.copy()
+        df = df.apply(
+            lambda x: (
+                x.str.replace(" ", "", n=1, regex=False) if x.dtype == "object" else x
+            )
+        )
 
-        if mask.sum() > 0:
-            le.fit(series[mask])
-            encoded.loc[mask] = le.transform(series[mask])
-            self.encoders[col] = le
+        df = df.replace(["", "?", "NA", "N/A", "na", "null"], np.nan)
 
-        return encoded.astype(float)
+        # target mapping
+        df["income"] = df["income"].map(
+            {
+                "<=50K": 0,
+                ">50K": 1,
+            }
+        )
 
-    def encode_categorical(self, X: pd.DataFrame) -> pd.DataFrame:
-        """
-        Zamienia wszystkie kolumny kategoryczne na numeryczne.
-        Drzewo implementujemy tylko dla cech numerycznych.
-        """
-        X = X.copy()
+        target = "income"
+        X = df.drop(columns=[target])
+        y = df[target]
 
-        for col in X.columns:
-            if X[col].dtype == "object":
-                X[col] = self._encode_column(X[col], col)
+        return X, y
 
-        return X
+    # ======================================================
+    # CAR SALES
+    # ======================================================
+    def _prepare_car(self):
+        df = load_car()
 
-    # --------------------------------------------------
-    # TARGET ENCODING (dla klasyfikacji)
-    # --------------------------------------------------
-    def encode_target(self, y: pd.Series) -> pd.Series:
-        if y.dtype == "object":
-            le = LabelEncoder()
-            y = pd.Series(le.fit_transform(y), name=y.name)
-        return y
+        df = df.replace(["", "?", "NA", "N/A", "na", "null"], np.nan)
 
-    # --------------------------------------------------
+        # usuń brak targetu
+        df = df.dropna(subset=["Price"])
+
+        # usunięcie "Rs" i konwersja na int
+        df["Price_numeric"] = (
+            df["Price"]
+            .str.replace("Rs", "", regex=False)
+            .str.replace(",", "", regex=False)
+            .astype(float)
+        )
+
+        # klasy cenowe
+        def price_to_class(price):
+            if price < 600000:
+                return 0  # tanie
+            elif price >= 1_000_000:
+                return 2  # drogie
+            else:
+                return 1  # średnie
+
+        df["Price_class"] = df["Price_numeric"].apply(price_to_class)
+
+        # usuwamy oryginalną cenę
+        df = df.drop(columns=["Price", "Price_numeric"])
+
+        target = "Price_class"
+        X = df.drop(columns=[target])
+        y = df[target]
+
+        return X, y
+
+    # ======================================================
+    # MAIN DISPATCHER
+    # ======================================================
+    def load_dataset(self, name: Dataset) -> Tuple[pd.DataFrame, pd.Series]:
+
+        if name == Dataset.TITANIC:
+            return self._prepare_titanic()
+
+        elif name == Dataset.ADULT:
+            return self._prepare_adult()
+
+        elif name == Dataset.CARSALES:
+            return self._prepare_car()
+
+        else:
+            raise ValueError(f"Unknown dataset: {name}")
+
+    # ======================================================
     # TRAIN / TEST SPLIT
-    # --------------------------------------------------
-    def train_test_split(
+    # ======================================================
+    def split(
         self, X: pd.DataFrame, y: pd.Series
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-
+    ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         stratify = y if len(y.unique()) < 20 else None
 
         return train_test_split(
             X,
             y,
-            test_size=self.test_size,
+            test_size=self.test_size,  # 80/20 zgodnie z wymaganiem
             random_state=self.random_state,
             stratify=stratify,
         )
 
-    # --------------------------------------------------
+    # ======================================================
     # FULL PIPELINE
-    # --------------------------------------------------
-    def prepare(self, path: str):
-        """
-        Pełny preprocessing:
-        load → split → encode → split train/test
-        """
-
-        df = self.load_dataset(path)
-        X, y = self.split_features_target(df)
-
-        X = self.encode_categorical(X)
-        y = self.encode_target(y)
-
-        return self.train_test_split(X, y)
+    # ======================================================
+    def prepare(
+        self, dataset_name: Dataset
+    ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        X, y = self.load_dataset(dataset_name)
+        return self.split(X, y)
