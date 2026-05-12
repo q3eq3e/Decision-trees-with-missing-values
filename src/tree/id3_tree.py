@@ -16,10 +16,10 @@ import pandas as pd
 
  
 class MissingStrategy(Enum):
-    TRIVAL = auto()
-    MAJORITY = auto()
-    SURROGATE = auto()
-    IMPUTATION = auto()
+    MAJORITY = 0
+    TRIVAL = 1
+    IMPUTATION = 2
+    SURROGATE = 3
 
 def _is_missing(val: Any) -> bool:
     if val is None:
@@ -36,8 +36,8 @@ def _entropy(dataset: pd.DataFrame) -> float:
     return -sum((c / n) * math.log2(c / n) for c in counts.values() if c)
  
  
-def _majority(dataset: pd.DataFrame) -> Any:
-    return Counter(y for _, y in dataset).most_common(1)[0][0]
+def _majority(Y: pd.DataFrame) -> Any:
+    return Counter(Y).most_common(1)[0][0]
 
 
 def best_threshold(attr: str, dataset: pd.DataFrame,
@@ -134,7 +134,7 @@ class DecisionTree:
         discrete_attrs:   List[str],
         continuous_attrs: List[str],
         max_depth:        int = 10,
-        strategy:         MissingStrategy = MissingStrategy.IMPUTATION,
+        strategy:         MissingStrategy = MissingStrategy.MAJORITY,
     ):
         self.discrete_attrs   = list(discrete_attrs)
         self.continuous_attrs = list(continuous_attrs)
@@ -150,27 +150,27 @@ class DecisionTree:
         dataset: pd.DataFrame = pd.concat([X, y], axis=1)
         classes = sorted(set(y))
         self.root = self._build(classes, self.discrete_attrs,
-                                self.continuous_attrs, dataset, self.max_depth)
+                                self.continuous_attrs, X, y, self.max_depth)
         return self
  
-    def _build(self, Y, D, C, U: pd.DataFrame, g: int):
-        classes = [row.iloc[-1] for row in U.iterrows()]
+    def _build(self, Y, D, C, X: pd.DataFrame, y: pd.Series, g: int):
+        classes = [row for row in y.values]
         if len(set(classes)) == 1:
             return Leaf(classes[0])
  
         all_same = all(
-            len({x.get(a) for x, _ in U}) <= 1 for a in D + C
+            len({x.get(a) for x in X.to_dict(orient="records")}) <= 1 for a in D + C
         )
         if all_same or g == 0:
-            return Leaf(_majority(U))
- 
+            return Leaf(_majority(y))
+
         # --- szukamy najlepszego podziału ---
         best_gain = -math.inf
         best_attr = None
         best_type = None   # "discrete" | "continuous"
         best_split_set = None
         best_t = None
- 
+        U = list(zip(X.to_dict(orient="records"), y.values))
         for d in D:
             gain, s = best_split(d, U, self.strategy)
             if gain > best_gain:
@@ -191,10 +191,10 @@ class DecisionTree:
                 best_type = "continuous"
  
         if best_attr is None or best_gain <= 0:
-            return Leaf(_majority(U))
+            return Leaf(_majority(y))
  
         # --- budujemy węzeł ---
-        maj = _majority(U)
+        maj = _majority(y)
  
         if best_type == "discrete":
             U_left  = [(x, y) for x, y in U if not _is_missing(x.get(best_attr)) and     x[best_attr]  in best_split_set]
@@ -244,6 +244,7 @@ class DecisionTree:
         while not node.is_leaf():
             result = node.condition(x)
             if result is None:
+
                 # brak wartości – idź domyślną gałęzią
                 node = node.left if node.default_route == "left" else node.right
             elif result:
@@ -254,4 +255,27 @@ class DecisionTree:
  
     def predict(self, X: pd.DataFrame) -> List[Any]:
         return [self.predict_one(x) for x in X]
+    
+    # ------------------------------------------------------------------
+    # Wizualizacja tekstowa
+    # ------------------------------------------------------------------
+ 
+    def __str__(self) -> str:
+        lines: List[str] = []
+        self._print_node(self.root, lines, prefix="", is_left=True, is_root=True)
+        return "\n".join(lines)
+ 
+    def _print_node(self, node, lines, prefix, is_left, is_root):
+        connector = "" if is_root else ("├── L: " if is_left else "└── R: ")
+        if node.is_leaf():
+            lines.append(f"{prefix}{connector}[LEAF] class={node.prediction}")
+            return
+        if node.is_continuous:
+            cond = f"{node.condition_attr} ≤ {node.threshold:.4f}"
+        else:
+            cond = f"{node.condition_attr} ∈ {set(node.split_set)}"
+        lines.append(f"{prefix}{connector}[NODE] {cond}  (default→{node.default_route})")
+        child_prefix = prefix + ("    " if is_root else ("│   " if is_left else "    "))
+        self._print_node(node.left,  lines, child_prefix, is_left=True,  is_root=False)
+        self._print_node(node.right, lines, child_prefix, is_left=False, is_root=False)
  

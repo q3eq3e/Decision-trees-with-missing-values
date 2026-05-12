@@ -5,18 +5,18 @@ from ..tree.predict import predict
 from .metrics import compute_metrics
 
 
-def run_experiment(X, y, runs=25):
-    results = []
+def run_experiment(X_train, y_train, X_test, y_test):
+        results = []
 
-    for seed in range(runs):
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=seed
-        )
+    # for seed in range(runs):
+    #     X_train, X_test, y_train, y_test = train_test_split(
+    #         X, y, test_size=0.2, random_state=seed
+    #     )
 
         tree = DecisionTree(
             discrete_attrs=X_train.discrete_columns,
             continuous_attrs=X_train.continuous_columns,
-            max_depth=5
+            max_depth=10
         )
         tree.fit(X_train, y_train)
 
@@ -29,5 +29,5 @@ def run_experiment(X, y, runs=25):
                 "test": compute_metrics(y_test, test_pred),
             }
         )
-
-    return results
+        print(tree)
+        return results
