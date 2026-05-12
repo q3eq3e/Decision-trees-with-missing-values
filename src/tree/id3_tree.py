@@ -13,9 +13,7 @@ import pandas as pd
 # ---------------------------------------------------------------------------
 # Typy pomocnicze
 # ---------------------------------------------------------------------------
- 
-# Sample = Dict[str, Any]          # słownik cecha -> wartość (None / NaN = brak)
-Dataset = pd.DataFrame
+
  
 class MissingStrategy(Enum):
     TRIVAL = auto()
@@ -30,7 +28,7 @@ def _is_missing(val: Any) -> bool:
         return True
     return False
 
-def _entropy(dataset: Dataset) -> float:
+def _entropy(dataset: pd.DataFrame) -> float:
     if not dataset:
         return 0.0
     counts = Counter(y for _, y in dataset)
@@ -38,11 +36,11 @@ def _entropy(dataset: Dataset) -> float:
     return -sum((c / n) * math.log2(c / n) for c in counts.values() if c)
  
  
-def _majority(dataset: Dataset) -> Any:
+def _majority(dataset: pd.DataFrame) -> Any:
     return Counter(y for _, y in dataset).most_common(1)[0][0]
 
 
-def best_threshold(attr: str, dataset: Dataset,
+def best_threshold(attr: str, dataset: pd.DataFrame,
                    strategy: MissingStrategy) -> Tuple[float, Optional[float]]:
     # prepared = _prepare_dataset(dataset, attr, strategy, is_continuous=True)
     prepared = dataset
@@ -64,12 +62,6 @@ def best_threshold(attr: str, dataset: Dataset,
         right = [(x, y) for x, y in sorted_u if x[attr] >  t]
         if strategy == MissingStrategy.SURROGATE:
             pass
-        # if strategy == MissingStrategy.FRACTION:
-        #     gain = _gain_fraction(
-        #         dataset, attr,
-        #         lambda x, _t=t: float(x[attr]) <= _t,
-        #         lambda x, _t=t: float(x[attr]) >  _t,
-        #     )
         else:
             gain = base_ent - (len(left) / n) * _entropy(left) \
                              - (len(right) / n) * _entropy(right)
@@ -85,7 +77,7 @@ def best_threshold(attr: str, dataset: Dataset,
 # BestSplit – atrybuty dyskretne
 # ---------------------------------------------------------------------------
  
-def best_split(attr: str, dataset: Dataset,
+def best_split(attr: str, dataset: pd.DataFrame,
                strategy: MissingStrategy) -> Tuple[float, Optional[frozenset]]:
     # prepared = _prepare_dataset(dataset, attr, strategy, is_continuous=False)
     prepared = dataset
@@ -142,7 +134,7 @@ class DecisionTree:
         discrete_attrs:   List[str],
         continuous_attrs: List[str],
         max_depth:        int = 10,
-        strategy:         MissingStrategy = MissingStrategy.IGNORE,
+        strategy:         MissingStrategy = MissingStrategy.IMPUTATION,
     ):
         self.discrete_attrs   = list(discrete_attrs)
         self.continuous_attrs = list(continuous_attrs)
@@ -155,14 +147,13 @@ class DecisionTree:
     # ------------------------------------------------------------------
  
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "DecisionTree":
-        dataset: Dataset = pd.concat([X, y], axis=1)
+        dataset: pd.DataFrame = pd.concat([X, y], axis=1)
         classes = sorted(set(y))
         self.root = self._build(classes, self.discrete_attrs,
                                 self.continuous_attrs, dataset, self.max_depth)
         return self
  
-    def _build(self, Y, D, C, U: Dataset, g: int):
-        # --- warunki stopu ---
+    def _build(self, Y, D, C, U: pd.DataFrame, g: int):
         classes = [row.iloc[-1] for row in U.iterrows()]
         if len(set(classes)) == 1:
             return Leaf(classes[0])

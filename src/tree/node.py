@@ -1,27 +1,41 @@
+import math
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
-
+from typing import Any, Dict, Optional
+import pandas as pd
 
 @dataclass
-class SurrogateRule:
-    attribute: str
-    threshold: Any = None
-    split: set = None
-    direction: str = "left"  # for continuous surrogate
-
-
+class Leaf:
+    prediction: Any
+ 
+    def is_leaf(self) -> bool:
+        return True
+ 
+ 
 @dataclass
 class Node:
-    is_leaf: bool = False
-    prediction: Any = None
-    majority_class: Any = None
-
-    attribute: Optional[str] = None
+    majority_class: Any
+    condition_attr: str
+    is_continuous: bool
+    # dyskretny: zbiór wartości trafiających w lewo
+    split_set: Optional[frozenset] = None
+    # ciągły: próg
     threshold: Optional[float] = None
-    split: Optional[set] = None
-
+    # domyślna gałąź gdy brak wartości atrybutu
     default_route: str = "left"
-    left: Any = None
-    right: Any = None
-
-    surrogates: List[SurrogateRule] = field(default_factory=list)
+    surrogate_splits = None 
+ 
+    left:  Any = field(default=None, repr=False)   # Node | Leaf
+    right: Any = field(default=None, repr=False)   # Node | Leaf
+ 
+    def is_leaf(self) -> bool:
+        return False
+ 
+    def condition(self, x: pd.DataFrame) -> Optional[bool]:
+        """Zwraca True -> lewo, False -> prawo, None -> brak wartości."""
+        val = x.get(self.condition_attr)
+        if val is None or (isinstance(val, float) and math.isnan(val)):
+            return None
+        if self.is_continuous:
+            return float(val) <= self.threshold
+        return val in self.split_set
+ 
