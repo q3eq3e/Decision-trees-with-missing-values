@@ -9,7 +9,7 @@ if __name__ == "__main__":
     # print("Titanic:", run_dataset(load_titanic))
     # print("Adult:", run_dataset(load_adult))
     # print("Car:", run_dataset(load_car))
-    X, test_x, y, test_y = DataPreprocessor().prepare(Dataset.CARSALES)
+    X, test_x, y, test_y = DataPreprocessor().prepare(Dataset.ADULT)
     # print(len(X), len(y), len(test_x), len(test_y))
     # print("Titanic:", X, y, X.discrete_columns, X.continuous_columns)
     # print("Adult:", DataPreprocessor().prepare(Dataset.ADULT))

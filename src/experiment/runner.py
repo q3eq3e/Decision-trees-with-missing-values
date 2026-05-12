@@ -16,12 +16,12 @@ def run_experiment(X_train, y_train, X_test, y_test):
         tree = DecisionTree(
             discrete_attrs=X_train.discrete_columns,
             continuous_attrs=X_train.continuous_columns,
-            max_depth=10
+            max_depth=4
         )
         tree.fit(X_train, y_train)
 
-        train_pred = predict(tree, X_train)
-        test_pred = predict(tree, X_test)
+        train_pred = tree.predict(X_train)
+        test_pred = tree.predict(X_test)
 
         results.append(
             {

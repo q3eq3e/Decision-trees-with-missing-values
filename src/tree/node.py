@@ -30,7 +30,7 @@ class Node:
     def is_leaf(self) -> bool:
         return False
  
-    def condition(self, x: pd.DataFrame) -> Optional[bool]:
+    def condition(self, x: pd.Series) -> Optional[bool]:
         """Zwraca True -> lewo, False -> prawo, None -> brak wartości."""
         val = x.get(self.condition_attr)
         if val is None or (isinstance(val, float) and math.isnan(val)):

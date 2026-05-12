@@ -40,10 +40,10 @@ def _majority(Y: pd.DataFrame) -> Any:
     return Counter(Y).most_common(1)[0][0]
 
 
-def best_threshold(attr: str, dataset: pd.DataFrame,
+def best_threshold(attr: str, dataset: list,
                    strategy: MissingStrategy) -> Tuple[float, Optional[float]]:
     # prepared = _prepare_dataset(dataset, attr, strategy, is_continuous=True)
-    prepared = dataset
+    prepared = [dataset[i] for i in range(len(dataset)) if not _is_missing(dataset[i][0][attr])]
     if len(prepared) < 2:
         return -math.inf, None
  
@@ -55,7 +55,7 @@ def best_threshold(attr: str, dataset: pd.DataFrame,
     best_t: Optional[float] = None
  
     for i in range(n - 1):
-        if sorted_u[i][1] == sorted_u[i + 1][1]:
+        if sorted_u[i][0][attr] == sorted_u[i + 1][0][attr]:
             continue
         t = (sorted_u[i][0][attr] + sorted_u[i + 1][0][attr]) / 2
         left  = [(x, y) for x, y in sorted_u if x[attr] <= t]
@@ -197,9 +197,12 @@ class DecisionTree:
         maj = _majority(y)
  
         if best_type == "discrete":
-            U_left  = [(x, y) for x, y in U if not _is_missing(x.get(best_attr)) and     x[best_attr]  in best_split_set]
-            U_right = [(x, y) for x, y in U if not _is_missing(x.get(best_attr)) and     x[best_attr] not in best_split_set]
- 
+            U_left = [(x, y) for x, y in U 
+                        if not _is_missing(val := x.get(best_attr)) and val in best_split_set]
+            X_left, y_left = zip(*U_left) if U_left else ([], [])
+            U_right = [(x, y) for x, y in U 
+                         if not _is_missing(val := x.get(best_attr)) and val not in best_split_set]
+            X_right, y_right = zip(*U_right) if U_right else ([], [])
             if self.strategy == MissingStrategy.SURROGATE:
                 pass
 
@@ -212,9 +215,13 @@ class DecisionTree:
             node.default_route = "right" if len(U_right) > len(U_left) else "left"
  
         else:  # continuous
-            U_left  = [(x, y) for x, y in U if not _is_missing(x.get(best_attr)) and float(x[best_attr]) <= best_t]
-            U_right = [(x, y) for x, y in U if not _is_missing(x.get(best_attr)) and float(x[best_attr]) >  best_t]
- 
+            U_left = [(x, y) for x, y in U 
+                        if not _is_missing(val := x.get(best_attr)) and val <= best_t]
+            X_left, y_left = zip(*U_left) if U_left else ([], [])
+            U_right = [(x, y) for x, y in U 
+                                                 if not _is_missing(val := x.get(best_attr)) and val > best_t]
+            X_right, y_right = zip(*U_right) if U_right else ([], [])
+
             if self.strategy == MissingStrategy.SURROGATE:
                 pass
  
@@ -224,22 +231,22 @@ class DecisionTree:
                 is_continuous=True,
                 threshold=best_t,
             )
-            node.default_route = "right" if len(U_right) > len(U_left) else "left"
+            node.default_route = "right" if len(y_right) > len(y_left) else "left"
  
-        if not U_left:
+        if not y_left:
             return Leaf(maj)
-        if not U_right:
+        if not y_right:
             return Leaf(maj)
  
-        node.left  = self._build(Y, D, C, U_left,  g - 1)
-        node.right = self._build(Y, D, C, U_right, g - 1)
+        node.left  = self._build(Y, D, C, pd.DataFrame(X_left), pd.Series(y_left),  g - 1)
+        node.right = self._build(Y, D, C, pd.DataFrame(X_right), pd.Series(y_right), g - 1)
         return node
  
     # ------------------------------------------------------------------
     # Predykcja
     # ------------------------------------------------------------------
  
-    def predict_one(self, x: pd.DataFrame) -> Any:
+    def predict_one(self, x: pd.Series) -> Any:
         node = self.root
         while not node.is_leaf():
             result = node.condition(x)
@@ -254,7 +261,7 @@ class DecisionTree:
         return node.prediction
  
     def predict(self, X: pd.DataFrame) -> List[Any]:
-        return [self.predict_one(x) for x in X]
+        return [self.predict_one(x[1]) for x in X.iterrows()]
     
     # ------------------------------------------------------------------
     # Wizualizacja tekstowa
