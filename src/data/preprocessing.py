@@ -41,6 +41,9 @@ class DataPreprocessor:
         X = df.drop(columns=[target])
         y = df[target]
 
+        X.discrete_columns = ["Pclass", "Sex", "Embarked"]
+        X.continuous_columns = ["Age", "SibSp", "Parch", "Fare"]
+
         return X, y
 
     # ======================================================
@@ -68,6 +71,22 @@ class DataPreprocessor:
         target = "income"
         X = df.drop(columns=[target])
         y = df[target]
+
+        X.discrete_columns = [
+            "workclass",
+            "marital-status",
+            "relationship",
+            "race",
+            "sex",
+        ]
+        X.continuous_columns = [
+            "age",
+            "fnlwgt",
+            "education-num",
+            "capital-gain",
+            "capital-loss",
+            "hours-per-week",
+        ]
 
         return X, y
 
@@ -108,6 +127,9 @@ class DataPreprocessor:
         X = df.drop(columns=[target])
         y = df[target]
 
+        X.discrete_columns = ["Make", "Colour"]
+        X.continuous_columns = ["Odometer (KM)", "Doors"]
+
         return X, y
 
     # ======================================================
@@ -134,14 +156,20 @@ class DataPreprocessor:
         self, X: pd.DataFrame, y: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         stratify = y if len(y.unique()) < 20 else None
-
-        return train_test_split(
+        disc_cols = getattr(X, "discrete_columns", [])
+        cont_cols = getattr(X, "continuous_columns", [])
+        result_list = train_test_split(
             X,
             y,
             test_size=self.test_size,  # 80/20 zgodnie z wymaganiem
             random_state=self.random_state,
             stratify=stratify,
         )
+        result_list[0].discrete_columns = disc_cols
+        result_list[0].continuous_columns = cont_cols
+        result_list[1].discrete_columns = disc_cols
+        result_list[1].continuous_columns = cont_cols
+        return result_list
 
     # ======================================================
     # FULL PIPELINE
