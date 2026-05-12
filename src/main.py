@@ -6,13 +6,7 @@ from src.missing_values.knn_imputation import KNNImputationStrategy
 
 warnings.filterwarnings("ignore")
 
-
-def run_dataset(loader):
-    df = loader()
-    y = df.iloc[:, -1]
-    X = df.iloc[:, :-1]
-    return run_experiment(X, y)
-
+warnings.filterwarnings("ignore")
 
 if __name__ == "__main__":
     X, test_x, y, test_y = DataPreprocessor().prepare(Dataset.ADULT)
