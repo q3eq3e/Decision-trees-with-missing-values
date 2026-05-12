@@ -74,7 +74,7 @@ class DataPreprocessor:
 
         X.discrete_columns = [
             "workclass",
-            "marital-status",
+            "martial-status",
             "relationship",
             "race",
             "sex",
