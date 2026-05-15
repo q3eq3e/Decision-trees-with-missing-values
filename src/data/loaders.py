@@ -8,7 +8,7 @@ def load_titanic():
 
 
 def load_adult():
-    df = pd.read_csv("data/Adult.csv")
+    df = pd.read_csv("data/Adult1000.csv")
     df = df.drop(columns=["education", "occupation", "native-country"])
     return df
 
