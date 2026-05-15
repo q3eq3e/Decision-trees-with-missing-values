@@ -1,98 +1,150 @@
 import numpy as np
 import pandas as pd
-from sklearn.impute import KNNImputer
-from sklearn.preprocessing import OrdinalEncoder
 
 
-class KNNImputationStrategy:
+class CustomKNNImputer:
     """
-    Imputacja braków przy użyciu sklearn KNNImputer.
+    KNN imputer zgodny z pseudokodem z pracy.
 
-    Pipeline:
-        1. Rozpoznanie kolumn numerycznych i kategorycznych
-        2. Tymczasowe kodowanie kategorii (OrdinalEncoder)
-        3. Imputacja KNN
-        4. Przywrócenie kategorii
+    Typy kolumn:
+        nominal_columns     -> dystans 0/1
+        discrete_columns    -> minmax + L1
+        continuous_columns  -> minmax + L1
     """
 
-    def __init__(self, n_neighbors: int = 5):
-        self.n_neighbors = n_neighbors
-        self.num_cols = None
-        self.cat_cols = None
+    def __init__(
+        self,
+        n_neighbors: int = 5,
+        discrete_columns: list[str] | None = None,
+        continuous_columns: list[str] | None = None,
+    ):
+        self.k = n_neighbors
+        self.discrete_cols_input = discrete_columns or []
+        self.continuous_cols = continuous_columns or []
 
-        self.encoder = None
-        self.imputer = KNNImputer(
-            n_neighbors=n_neighbors,
-            weights="uniform",
-            metric="nan_euclidean",
-        )
+        # zostaną wykryte w fit()
+        self.nominal_cols = []
+        self.ordinal_cols = []
+        self.numeric_cols = []
+
+        self.min_ = {}
+        self.max_ = {}
+        self.X_train = None
+        self.train_index_to_pos = None
 
     # ======================================================
     # FIT
     # ======================================================
     def fit(self, X: pd.DataFrame):
         X = X.copy()
+        self.X_train = X
 
-        self.num_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-        self.cat_cols = X.select_dtypes(exclude=[np.number]).columns.tolist()
+        # 🔹 rozbij discrete -> nominal vs ordinal
+        for col in self.discrete_cols_input:
+            if pd.api.types.is_numeric_dtype(X[col]):
+                self.ordinal_cols.append(col)
+            else:
+                self.nominal_cols.append(col)
 
-        # encoder dla kategorii (obsługa NaN!)
-        if len(self.cat_cols) > 0:
-            self.encoder = OrdinalEncoder(
-                handle_unknown="use_encoded_value", unknown_value=np.nan
-            )
-            self.encoder.fit(X[self.cat_cols])
+        # numeric = ordinal + continuous
+        self.numeric_cols = self.ordinal_cols + self.continuous_cols
 
-        # przygotuj dane numeryczne do fit imputera
-        X_encoded = self._encode(X)
-        self.imputer.fit(X_encoded)
+        # zapamiętaj min/max dla skalowania
+        for col in self.numeric_cols:
+            self.min_[col] = X[col].min()
+            self.max_[col] = X[col].max()
+
+        self.train_index_to_pos = {
+            idx: pos for pos, idx in enumerate(self.X_train.index)
+        }
 
         return self
 
     # ======================================================
-    # ENCODE / DECODE
+    # MINMAX NORMALIZATION
     # ======================================================
-    def _encode(self, X: pd.DataFrame) -> pd.DataFrame:
-        X = X.copy()
+    def _normalize_numeric(self, col, values):
+        min_val = self.min_[col]
+        max_val = self.max_[col]
 
-        if self.cat_cols:
-            X[self.cat_cols] = self.encoder.transform(X[self.cat_cols])
+        if max_val == min_val:
+            return np.zeros_like(values, dtype=float)
 
-        return X.astype(float)
+        return (values - min_val) / (max_val - min_val)
 
-    def _decode(self, X: pd.DataFrame) -> pd.DataFrame:
-        X = X.copy()
+    # ======================================================
+    # DISTANCE RECORD vs MATRIX (VECTORISED)
+    # ======================================================
+    def _distance_to_all(self, row: pd.Series) -> np.ndarray:
+        X = self.X_train
+        distances = np.zeros(len(X))
 
-        if self.cat_cols:
-            # zaokrąglamy bo imputacja daje floaty
-            X[self.cat_cols] = np.round(X[self.cat_cols])
-            X[self.cat_cols] = self.encoder.inverse_transform(X[self.cat_cols])
+        # -------- NOMINAL --------
+        for col in self.nominal_cols:
+            a = row[col]
+            b = X[col].values
 
-        return X
+            missing_mask = pd.isna(a) | pd.isna(b)
+            diff = (b != a).astype(float)
+            diff[missing_mask] = 1
+            distances += diff
+
+        # -------- NUMERIC (discrete + continuous) --------
+        for col in self.numeric_cols:
+            a = row[col]
+            b = X[col].values
+
+            missing_mask = pd.isna(a) | pd.isna(b)
+
+            a_norm = self._normalize_numeric(col, np.array([a]))[0]
+            b_norm = self._normalize_numeric(col, b.astype(float))
+
+            diff = np.abs(b_norm - a_norm)
+            diff[missing_mask] = 1
+            distances += diff
+
+        return distances
+
+    # ======================================================
+    # IMPUTE SINGLE COLUMN FROM NEIGHBOURS
+    # ======================================================
+    def _impute_from_neighbors(self, neighbors: pd.DataFrame, column: str):
+        col_values = neighbors[column].dropna()
+
+        if len(col_values) == 0:
+            return np.nan
+
+        if column in self.nominal_cols:
+            return col_values.mode().iloc[0]
+        else:
+            return col_values.mean()
 
     # ======================================================
     # TRANSFORM
     # ======================================================
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        X_original = X.copy()
+        X = X.copy()
 
-        X_encoded = self._encode(X_original)
+        for idx, row in X.iterrows():
+            if not row.isna().any():
+                continue
 
-        X_imputed = self.imputer.transform(X_encoded)
-        X_imputed = pd.DataFrame(X_imputed, columns=X.columns, index=X.index)
+            distances = self._distance_to_all(row)
 
-        X_decoded = self._decode(X_imputed)
+            if idx in self.train_index_to_pos:
+                pos = self.train_index_to_pos[idx]
+                distances[pos] = np.inf
 
-        return X_decoded
+            knn_idx = np.argsort(distances)[: self.k]
+            neighbors = self.X_train.iloc[knn_idx]
+
+            for col in X.columns:
+                if pd.isna(row[col]):
+                    X.at[idx, col] = self._impute_from_neighbors(neighbors, col)
+
+        return X
 
     def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
         self.fit(X)
+        self.X_train = X.copy()
         return self.transform(X)
-
-
-# Usage:
-# from missing_values.knn_imputation import KNNImputationStrategy
-
-# imputer = KNNImputationStrategy(n_neighbors=5)
-# X_train = imputer.fit_transform(X_train)
-# X_test = imputer.transform(X_test)
