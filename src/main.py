@@ -53,4 +53,4 @@ if __name__ == "__main__":
     # print(len(X), len(y), len(test_x), len(test_y))
     # # print("Car:", X, y)
     print(X.isna().sum(), test_x.isna().sum(), y.isna().sum(), test_y.isna().sum())
-    print(run_experiment(X, y, test_x, test_y))
+    print(run_experiment(X, y, test_x, test_y, args.mode))
