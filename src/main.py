@@ -20,13 +20,15 @@ if __name__ == "__main__":
         help="Dataset to run the experiment on.",
     )
     parser.add_argument(
-        "--impute",
-        action="store_true",
-        help="Whether to impute missing values using KNN imputation.",
+        "--mode",
+        type=str,
+        choices=["impute", "default", "trivial", "surrogate"],
+        default="default",
+        help="Mode of operation for the experiment.",
     )
     args = parser.parse_args()
 
-    knn_impute = args.impute
+    knn_impute = args.mode == "impute"
     dataset_mapping = {
         "titanic": Dataset.TITANIC,
         "adult": Dataset.ADULT,

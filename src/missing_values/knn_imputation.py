@@ -135,6 +135,15 @@ class CustomKNNImputer:
                 pos = self.train_index_to_pos[idx]
                 distances[pos] = np.inf
 
+            # kolumny z brakami w aktualnym wierszu
+            missing_cols = row.index[row.isna()]
+
+            # kandydaci muszą mieć wartości w tych kolumnach
+            valid_mask = ~self.X_train[missing_cols].isna().any(axis=1)
+
+            # unieważnij nieważnych sąsiadów
+            distances[~valid_mask.to_numpy()] = np.inf
+
             knn_idx = np.argsort(distances)[: self.k]
             neighbors = self.X_train.iloc[knn_idx]
 
