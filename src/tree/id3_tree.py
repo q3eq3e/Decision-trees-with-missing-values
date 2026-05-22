@@ -5,6 +5,8 @@ from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
+
+from .surrogate import surrogate_split, surrogate_split_predict
 from .node import Leaf, Node
 import pandas as pd
 
@@ -188,14 +190,11 @@ def best_split(
             if not left or not right:
                 return -math.inf, split
             n = len(prepared)
-            if strategy == MissingStrategy.SURROGATE:
-                pass
-            else:
-                gain = (
-                    _entropy(prepared)
-                    - (len(left) / n) * _entropy(left)
-                    - (len(right) / n) * _entropy(right)
-                )
+            gain = (
+                _entropy(prepared)
+                - (len(left) / n) * _entropy(left)
+                - (len(right) / n) * _entropy(right)
+            )
             return gain, split
 
         g1, s1 = recurse(split, idx + 1)
@@ -216,6 +215,7 @@ class DecisionTree:
     continuous_attrs : lista nazw atrybutów ciągłych
     max_depth : maksymalna głębokość drzewa (g)
     strategy : MissingStrategy – strategia obsługi brakujących wartości
+    max_surrogate_splits : maksymalna liczba surrogate splits
     """
 
     def __init__(
@@ -224,12 +224,14 @@ class DecisionTree:
         continuous_attrs: List[str],
         max_depth: int = 10,
         strategy: MissingStrategy = MissingStrategy.MAJORITY,
+        max_surrogate_splits: int = 5,
     ):
         self.discrete_attrs = list(discrete_attrs)
         self.continuous_attrs = list(continuous_attrs)
         self.max_depth = max_depth
         self.strategy = strategy
         self.root: Any = None
+        self.max_surrogate_splits = max_surrogate_splits
 
     # ------------------------------------------------------------------
     # Budowanie
@@ -291,21 +293,36 @@ class DecisionTree:
         maj = _majority(y)
 
         if best_type == "discrete":
-            U_left = [
-                (x, y)
-                for x, y in U
-                if not _is_missing(val := x.get(best_attr)) and val in best_split_set
-            ]
-            X_left, y_left = zip(*U_left) if U_left else ([], [])
-            U_right = [
-                (x, y)
-                for x, y in U
-                if not _is_missing(val := x.get(best_attr))
-                and val not in best_split_set
-            ]
-            X_right, y_right = zip(*U_right) if U_right else ([], [])
             if self.strategy == MissingStrategy.SURROGATE:
-                pass
+                
+                U_left = []
+                U_right = []
+                id_left = []
+                id_right = []
+                for i, (x, y) in enumerate(U):
+                    if _is_missing(x.get(best_attr)) or x.get(best_attr) == "?":
+                        continue
+                    elif x.get(best_attr) in best_split_set:
+                        U_left.append((x, y))
+                        id_left.append(i)
+                    else:
+                        U_right.append((x, y))
+                        id_right.append(i)
+            else:
+                U_left = [
+                    (x, y)
+                    for x, y in U
+                    if not _is_missing(val := x.get(best_attr)) and val in best_split_set
+                ]
+                U_right = [
+                    (x, y)
+                    for x, y in U
+                    if not _is_missing(val := x.get(best_attr))
+                    and val not in best_split_set
+                ]
+            X_left, y_left = zip(*U_left) if U_left else ([], [])
+            X_right, y_right = zip(*U_right) if U_right else ([], [])
+            
 
             node = Node(
                 majority_class=maj,
@@ -318,27 +335,43 @@ class DecisionTree:
         else:  # continuous
             U_left = []
             U_right = []
+            if self.strategy == MissingStrategy.SURROGATE:
+                id_left = []
+                id_right = []
+                for i, (x_row, y_row) in enumerate(U):
+                    val = x_row.get(best_attr)
+                    # brak wartości
+                    if _is_missing(val) or val == "?":
+                        continue
 
-            for x_row, y_row in U:
+                    if val <= best_t:
+                        U_left.append((x_row, y_row))
+                        id_left.append(i)
+                    else:
+                        U_right.append((x_row, y_row))
+                        id_right.append(i)
+                
+            else:
+                for x_row, y_row in U:
 
-                val = x_row.get(best_attr)
+                    val = x_row.get(best_attr)
 
-                # brak wartości
-                if _is_missing(val) or val == "?":
+                    # brak wartości
+                    if _is_missing(val) or val == "?":
 
-                    if self.strategy == MissingStrategy.TRIVIAL:
+                        if self.strategy == MissingStrategy.TRIVIAL:
 
-                        if best_default_route == "left":
-                            U_left.append((x_row, y_row))
-                        else:
-                            U_right.append((x_row, y_row))
+                            if best_default_route == "left":
+                                U_left.append((x_row, y_row))
+                            else:
+                                U_right.append((x_row, y_row))
 
-                    continue
+                        continue
 
-                if val <= best_t:
-                    U_left.append((x_row, y_row))
-                else:
-                    U_right.append((x_row, y_row))
+                    if val <= best_t:
+                        U_left.append((x_row, y_row))
+                    else:
+                        U_right.append((x_row, y_row))
 
             X_left, y_left = zip(*U_left) if U_left else ([], [])
             X_right, y_right = zip(*U_right) if U_right else ([], [])
@@ -363,6 +396,8 @@ class DecisionTree:
         node.right = self._build(
             Y, D, C, pd.DataFrame(X_right), pd.Series(y_right), g - 1
         )
+        if self.strategy == MissingStrategy.SURROGATE:
+            node.surrogate_splits = surrogate_split(X, D, C, best_attr, pd.Index(id_left), pd.Index(id_right), self.max_surrogate_splits)
         return node
 
     # ------------------------------------------------------------------
@@ -382,7 +417,9 @@ class DecisionTree:
                         node = node.right
 
                     continue
-
+                elif self.strategy == MissingStrategy.SURROGATE and node.surrogate_splits:
+                    node = surrogate_split_predict(node,x)
+                    continue
                 return node.majority_class
             elif result:
                 node = node.left

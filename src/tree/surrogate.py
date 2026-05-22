@@ -1,117 +1,9 @@
-import numpy as np
-import pandas as pd
-from typing import List, Tuple
 
-
-class SurrogateSplitFinder:
-    """
-    Szuka surrogate splitów maksymalizujących zgodność z głównym splitem.
-    """
-
-    def __init__(self, max_surrogates: int = 3):
-        self.max_surrogates = max_surrogates
-
-    def _agreement_score(self, primary_left, surrogate_left):
-        """
-        Oblicza zgodność dwóch podziałów.
-        """
-        mask = ~np.isnan(primary_left) & ~np.isnan(surrogate_left)
-        if mask.sum() == 0:
-            return 0
-        return np.mean(primary_left[mask] == surrogate_left[mask])
-
-    def _numeric_split(self, feature: pd.Series, threshold: float):
-        return feature <= threshold
-
-    def find_surrogates(
-        self,
-        X: pd.DataFrame,
-        primary_feature: str,
-        primary_threshold: float,
-    ) -> List[Tuple[str, float]]:
-        """
-        Zwraca listę surrogate splitów:
-        [(feature, threshold), ...]
-        """
-
-        surrogates = []
-
-        primary_split = self._numeric_split(
-            X[primary_feature], primary_threshold
-        ).astype(float)
-
-        for col in X.columns:
-            if col == primary_feature:
-                continue
-
-            if not np.issubdtype(X[col].dtype, np.number):
-                continue
-
-            values = X[col].dropna().unique()
-            if len(values) < 5:
-                continue
-
-            thresholds = np.percentile(values, [20, 40, 60, 80])
-
-            best_score = -1
-            best_thr = None
-
-            for thr in thresholds:
-                surrogate_split = self._numeric_split(X[col], thr).astype(float)
-                score = self._agreement_score(primary_split, surrogate_split)
-
-                if score > best_score:
-                    best_score = score
-                    best_thr = thr
-
-            if best_thr is not None:
-                surrogates.append((col, best_thr, best_score))
-
-        surrogates.sort(key=lambda x: x[2], reverse=True)
-        return surrogates[: self.max_surrogates]
-
-
-def apply_split_with_surrogates(
-    X: pd.DataFrame,
-    feature: str,
-    threshold: float,
-    surrogates: List[Tuple[str, float]],
-):
-    """
-    Zwraca maskę lewego/prawego dziecka uwzględniając surrogate splits.
-    """
-
-    left_mask = X[feature] <= threshold
-    missing_mask = X[feature].isna()
-
-    for s_feature, s_thr, _ in surrogates:
-        surrogate_left = X[s_feature] <= s_thr
-        left_mask = left_mask | (missing_mask & surrogate_left)
-        missing_mask = missing_mask & X[s_feature].isna()
-
-    # pozostałe NaN → większość
-    majority_left = left_mask.mean() >= 0.5
-    left_mask = left_mask | missing_mask if majority_left else left_mask
-
-    right_mask = ~left_mask
-    return left_mask, right_mask
 import numpy as np
 import pandas as pd
 import heapq
 from dataclasses import dataclass
 from typing import Any, List, Optional, Set, Tuple
-
-
-def _is_discrete(series: pd.Series) -> bool:
-    """
-    Returns True if the column should be treated as a discrete (categorical)
-    attribute: object, string, boolean, or pandas Categorical dtype.
-    Numeric dtypes are treated as continuous.
-    """
-    return pd.api.types.is_object_dtype(series) \
-        or pd.api.types.is_bool_dtype(series) \
-        or isinstance(series.dtype, pd.CategoricalDtype) \
-        or pd.api.types.is_string_dtype(series)
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +154,7 @@ def best_surrogate_split(
     -------
     (best_agreement, best_split_frozenset)
     """
-    if i == len(values):
+    if i == len(values)-1:
         col = U[d].dropna()
         U_l_idx = col[col.isin(split)].index
         U_r_idx = col[~col.isin(split)].index
@@ -294,6 +186,8 @@ def best_surrogate_split(
 
 def surrogate_split(
     U: pd.DataFrame,
+    D: List[str],
+    C: List[str],
     best_attr: str,
     U_left_idx: pd.Index,
     U_right_idx: pd.Index,
@@ -322,33 +216,32 @@ def surrogate_split(
     heap: List[Tuple[float, SurrogateEntry]] = []
 
     def _push(entry: SurrogateEntry):
-        heapq.heappush(heap, (-entry.agreement, entry))
+        heapq.heappush(heap, (entry.agreement, entry))
         if len(heap) > size:
             heapq.heappop(heap)
 
-    for attr in U.columns:
+    for attr in D:
         if attr == best_attr:
             continue
-
-        if _is_discrete(U[attr]):
-            col = U[attr].dropna()
-            values = sorted(col.unique().tolist())
-            if not values:
-                continue
-            a, s = best_surrogate_split(
-                attr, U, U_left_idx, U_right_idx,
-                frozenset(), 0, values
-            )
-            _push(SurrogateEntry(agreement=a, attribute=attr, split_values=set(s)))
-
-        elif pd.api.types.is_numeric_dtype(U[attr]):
-            a, t, direction = best_surrogate_threshold(
-                attr, U, U_left_idx, U_right_idx
-            )
-            if t is None:
-                continue
-            _push(SurrogateEntry(agreement=a, attribute=attr,
-                                 threshold=t, direction=direction))
+        col = U[attr].dropna()
+        values = sorted(col.unique().tolist())
+        if not values:
+            continue
+        a, s = best_surrogate_split(
+            attr, U, U_left_idx, U_right_idx,
+            frozenset(), 0, values
+        )
+        _push(SurrogateEntry(agreement=a, attribute=attr, split_values=set(s)))
+    for attr in C:
+        if attr == best_attr:
+            continue
+        a, t, direction = best_surrogate_threshold(
+            attr, U, U_left_idx, U_right_idx
+        )
+        if t is None:
+            continue
+        _push(SurrogateEntry(agreement=a, attribute=attr,
+                                threshold=t, direction=direction))
 
         # other dtypes (datetime, etc.) are skipped
 
@@ -369,7 +262,7 @@ def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
         node.condition(x)   – callable; True → go left
         node.left           – left child node
         node.right          – right child node
-        node.surrogates     – list of SurrogateEntry
+        node.surrogate_splits     – list of SurrogateEntry
         node.default_route  – "left" | "right" (majority class direction)
         node.prediction     – leaf prediction value
         node.is_leaf        – bool
@@ -395,73 +288,14 @@ def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
         else:
             # discrete surrogate
             return val in entry.split_values
-
-    while not node.is_leaf:
-        primary_val = x.get(node.attribute, np.nan)
-
-        if not _is_missing(primary_val):
-            # Primary attribute is available
-            if node.condition(x):
-                node = node.left
+    for surrogate in node.surrogate_splits:
+        s_val = x.get(surrogate.attribute, np.nan)
+        if not _is_missing(s_val):
+            if _surrogate_condition(surrogate, x):
+                return node.left
             else:
-                node = node.right
-        else:
-            # Primary attribute is missing – try surrogates in order
-            found_surrogate = False
-            for surrogate in node.surrogates:
-                s_val = x.get(surrogate.attribute, np.nan)
-                if not _is_missing(s_val):
-                    if _surrogate_condition(surrogate, x):
-                        node = node.left
-                    else:
-                        node = node.right
-                    found_surrogate = True
-                    break
-
-            if not found_surrogate:
-                # No surrogate available → take the majority route
-                return node.default_route
-
-    return node.prediction
-
-
-# ---------------------------------------------------------------------------
-# Legacy helper kept for backward compatibility
-# ---------------------------------------------------------------------------
-
-def apply_split_with_surrogates(
-    X: pd.DataFrame,
-    feature: str,
-    threshold: float,
-    surrogates: List[SurrogateEntry],
-) -> Tuple[pd.Series, pd.Series]:
-    """
-    Returns (left_mask, right_mask) for a node, routing missing primary
-    values through surrogate splits and ultimately the majority direction.
-    """
-    left_mask    = X[feature] <= threshold
-    missing_mask = X[feature].isna()
-
-    for entry in surrogates:
-        if missing_mask.sum() == 0:
-            break
-        if entry.threshold is not None:
-            if entry.direction == "left":
-                surrogate_left = X[entry.attribute] <= entry.threshold
-            else:
-                surrogate_left = X[entry.attribute] > entry.threshold
-        else:
-            surrogate_left = X[entry.attribute].isin(entry.split_values)
-
-        left_mask    = left_mask | (missing_mask & surrogate_left)
-        missing_mask = missing_mask & X[entry.attribute].isna()
-
-    # Remaining NaN → majority direction
-    majority_left = left_mask.mean() >= 0.5
-    if majority_left:
-        left_mask = left_mask | missing_mask
-
-    right_mask = ~left_mask
-    return left_mask, right_mask
-
-# ----------------------------
+                return node.right
+    if node.default_route == "left":
+        return node.left
+    else:
+        return node.right
