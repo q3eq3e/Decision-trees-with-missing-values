@@ -179,3 +179,17 @@ class DataPreprocessor:
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         X, y = self.load_dataset(dataset_name)
         return self.split(X, y)
+
+
+def masking(dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42) -> Dataset:
+    if missing_rate <= 0 or column not in dataset.columns:
+        return dataset
+    np.random.seed(seed)
+    # print(dataset.count())
+    for i in range(len(dataset)):
+        x = np.random.rand()
+        if x < missing_rate:
+            dataset[column].iloc[i] = np.nan
+    # print(dataset.count())
+
+    return dataset

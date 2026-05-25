@@ -2,7 +2,7 @@ import argparse
 
 from src.data.loaders import load_titanic, load_adult, load_car
 from src.experiment.runner import run_experiment
-from src.data.preprocessing import DataPreprocessor, Dataset
+from src.data.preprocessing import DataPreprocessor, Dataset, masking
 import warnings
 from src.missing_values.knn_imputation import CustomKNNImputer
 import argparse
@@ -18,6 +18,19 @@ if __name__ == "__main__":
         choices=["titanic", "adult", "carsales"],
         default="carsales",
         help="Dataset to run the experiment on.",
+    )
+    
+    parser.add_argument(
+        "--masking_column",
+        type=str,
+        required=False,
+        help="Column to apply masking to.",
+    )
+    parser.add_argument(
+        "--masking_rate",
+        type=float,
+        default=0.3,
+        help="Rate of masking for the specified column (between 0 and 1).",
     )
     parser.add_argument(
         "--mode",
@@ -36,6 +49,9 @@ if __name__ == "__main__":
     }
     dataset = dataset_mapping[args.dataset]
     X, test_x, y, test_y = DataPreprocessor().prepare(dataset)
+    if args.masking_column:
+        dataset = masking(X, args.masking_rate, args.masking_column)
+
     discrete_columns = X.discrete_columns
     continuous_columns = X.continuous_columns
     if knn_impute:
