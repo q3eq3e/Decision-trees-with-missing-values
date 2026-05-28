@@ -77,7 +77,7 @@ def best_surrogate_threshold(
 
     Returns:
         (best_agreement, best_t, best_direction)
-        best_direction in {"left", "right"} – "left" means U[c] <= t goes left.
+        best_direction in {"left", "right"} - "left" means U[c] <= t goes left.
     """
     # Work only on rows that have a value for c
     col = U[c].dropna()
@@ -258,14 +258,14 @@ def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
     whenever the primary attribute is missing ("?" or NaN).
 
     Assumes each tree node has:
-        node.attribute      – primary split attribute name
-        node.condition(x)   – callable; True → go left
-        node.left           – left child node
-        node.right          – right child node
-        node.surrogate_splits     – list of SurrogateEntry
-        node.default_route  – "left" | "right" (majority class direction)
-        node.prediction     – leaf prediction value
-        node.is_leaf        – bool
+        node.attribute      - primary split attribute name
+        node.condition(x)   - callable; True → go left
+        node.left           - left child node
+        node.right          - right child node
+        node.surrogate_splits     - list of SurrogateEntry
+        node.default_route  - "left" | "right" (majority class direction)
+        node.prediction     - leaf prediction value
+        node.is_leaf        - bool
     """
     def _is_missing(value) -> bool:
         if value == "?":

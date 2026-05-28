@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from .surrogate import surrogate_split, surrogate_split_predict
+from ..missing_values.surrogate import surrogate_split, surrogate_split_predict
 from .node import Leaf, Node
 import pandas as pd
 
