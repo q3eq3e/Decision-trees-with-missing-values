@@ -4,7 +4,7 @@ import pandas as pd
 import heapq
 from dataclasses import dataclass
 from typing import Any, List, Optional, Set, Tuple
-
+from ..tree.resources import is_missing
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -267,14 +267,6 @@ def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
         node.prediction     - leaf prediction value
         node.is_leaf        - bool
     """
-    def _is_missing(value) -> bool:
-        if value == "?":
-            return True
-        try:
-            return pd.isna(value)
-        except (TypeError, ValueError):
-            return False
-
     def _surrogate_condition(entry: SurrogateEntry, x: pd.Series) -> bool:
         """Returns True if surrogate sends x to the LEFT child."""
         val = x.get(entry.attribute, np.nan)
@@ -290,7 +282,7 @@ def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
             return val in entry.split_values
     for surrogate in node.surrogate_splits:
         s_val = x.get(surrogate.attribute, np.nan)
-        if not _is_missing(s_val):
+        if not is_missing(s_val):
             if _surrogate_condition(surrogate, x):
                 return node.left
             else:

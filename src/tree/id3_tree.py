@@ -7,12 +7,10 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import numpy as np
 
 from ..missing_values.surrogate import surrogate_split, surrogate_split_predict
+from ..missing_values.trival import best_threshold_trival
 from .node import Leaf, Node
+from .resources import entropy, is_missing, majority
 import pandas as pd
-
-# ---------------------------------------------------------------------------
-# Typy pomocnicze
-# ---------------------------------------------------------------------------
 
 
 class MissingStrategy(Enum):
@@ -21,117 +19,21 @@ class MissingStrategy(Enum):
     IMPUTATION = 2
     SURROGATE = 3
 
-
-def _is_missing(val: Any) -> bool:
-    if val is None:
-        return True
-    if isinstance(val, float) and math.isnan(val):
-        return True
-    return False
-
-
-def _entropy(dataset: pd.DataFrame) -> float:
-    if not dataset:
-        return 0.0
-    counts = Counter(y for _, y in dataset)
-    n = len(dataset)
-    return -sum((c / n) * math.log2(c / n) for c in counts.values() if c)
-
-
-def _majority(Y: pd.DataFrame) -> Any:
-    return Counter(Y).most_common(1)[0][0]
-
-
 def best_threshold(
     attr: str,
-    dataset: list,
-    strategy: MissingStrategy,
-) -> Tuple[float, Optional[float], str]:
-
-    if strategy == MissingStrategy.TRIVIAL:
-
-        U_missing = [
-            (x, y) for x, y in dataset if _is_missing(x.get(attr)) or x.get(attr) == "?"
-        ]
-
-        U_num = [
-            (x, y)
-            for x, y in dataset
-            if not _is_missing(x.get(attr)) and x.get(attr) != "?"
-        ]
-
-        if len(U_num) < 2:
-            return -math.inf, None, "left"
-
-        sorted_u = sorted(U_num, key=lambda t: t[0][attr])
-
-        best_gain = -math.inf
-        best_t = None
-        best_default = "left"
-
-        n_total = len(dataset)
-        base_ent = _entropy(dataset)
-
-        for i in range(len(sorted_u) - 1):
-
-            if sorted_u[i][1] == sorted_u[i + 1][1]:
-                continue
-
-            v1 = sorted_u[i][0][attr]
-            v2 = sorted_u[i + 1][0][attr]
-
-            if v1 == v2:
-                continue
-
-            t = (v1 + v2) / 2
-
-            U_left = [(x, y) for x, y in sorted_u if x[attr] <= t]
-            U_right = [(x, y) for x, y in sorted_u if x[attr] > t]
-
-            # missing -> left
-            left_with_missing = U_left + U_missing
-
-            gain_left = (
-                base_ent
-                - (len(left_with_missing) / n_total) * _entropy(left_with_missing)
-                - (len(U_right) / n_total) * _entropy(U_right)
-            )
-
-            if gain_left > best_gain:
-                best_gain = gain_left
-                best_t = t
-                best_default = "left"
-
-            # missing -> right
-            right_with_missing = U_right + U_missing
-
-            gain_right = (
-                base_ent
-                - (len(U_left) / n_total) * _entropy(U_left)
-                - (len(right_with_missing) / n_total) * _entropy(right_with_missing)
-            )
-
-            if gain_right > best_gain:
-                best_gain = gain_right
-                best_t = t
-                best_default = "right"
-
-        return best_gain, best_t, best_default
-
-    # ==========================
-    # STARE ZACHOWANIE
-    # ==========================
+    dataset: list
+) -> Tuple[float, Optional[float]]:
 
     prepared = [
-        dataset[i] for i in range(len(dataset)) if not _is_missing(dataset[i][0][attr])
+        dataset[i] for i in range(len(dataset)) if not is_missing(dataset[i][0][attr])
     ]
 
     if len(prepared) < 2:
-        return -math.inf, None, "left"
+        return -math.inf, None
 
     sorted_u = sorted(prepared, key=lambda t: t[0][attr])
 
-    base_ent = _entropy(prepared)
+    base_ent = entropy(prepared)
     n = len(sorted_u)
 
     best_gain = -math.inf
@@ -149,15 +51,15 @@ def best_threshold(
 
         gain = (
             base_ent
-            - (len(left) / n) * _entropy(left)
-            - (len(right) / n) * _entropy(right)
+            - (len(left) / n) * entropy(left)
+            - (len(right) / n) * entropy(right)
         )
 
         if gain > best_gain:
             best_gain = gain
             best_t = t
 
-    return best_gain, best_t, "left"
+    return best_gain, best_t
 
 
 # ---------------------------------------------------------------------------
@@ -166,14 +68,13 @@ def best_threshold(
 
 
 def best_split(
-    attr: str, dataset: pd.DataFrame, strategy: MissingStrategy
+    attr: str, dataset: List
 ) -> Tuple[float, Optional[frozenset]]:
-    # prepared = _prepare_dataset(dataset, attr, strategy, is_continuous=False)
-    prepared = dataset
-    if not prepared:
+
+    if not dataset:
         return -math.inf, None
 
-    values = list({x[attr] for x, _ in prepared})
+    values = list({x[attr] for x, _ in dataset})
     if len(values) < 2:
         return -math.inf, None
 
@@ -185,15 +86,15 @@ def best_split(
         if idx == len(values):
             if not split or split == frozenset(values):
                 return -math.inf, split
-            left = [(x, y) for x, y in prepared if x[attr] in split]
-            right = [(x, y) for x, y in prepared if x[attr] not in split]
+            left = [(x, y) for x, y in dataset if x[attr] in split]
+            right = [(x, y) for x, y in dataset if x[attr] not in split]
             if not left or not right:
                 return -math.inf, split
-            n = len(prepared)
+            n = len(dataset)
             gain = (
-                _entropy(prepared)
-                - (len(left) / n) * _entropy(left)
-                - (len(right) / n) * _entropy(right)
+                entropy(dataset)
+                - (len(left) / n) * entropy(left)
+                - (len(right) / n) * entropy(right)
             )
             return gain, split
 
@@ -254,7 +155,7 @@ class DecisionTree:
             len({x.get(a) for x in X.to_dict(orient="records")}) <= 1 for a in D + C
         )
         if all_same or g == 0:
-            return Leaf(_majority(y))
+            return Leaf(majority(y))
 
         # --- szukamy najlepszego podziału ---
         best_gain = -math.inf
@@ -264,21 +165,32 @@ class DecisionTree:
         best_t = None
         U = list(zip(X.to_dict(orient="records"), y.values))
         for d in D:
-            gain, s = best_split(d, U, self.strategy)
+            if self.strategy == MissingStrategy.TRIVIAL:
+                prepared_dataset = []
+                for i in range(len(U)):
+                    prepared_dataset.append(U[i])
+                    if is_missing(U[i][0][d]):
+                        prepared_dataset[-1][0][d]='?'
+            else:
+                prepared_dataset = [
+                    U[i] for i in range(len(U)) if not is_missing(U[i][0][d])
+                ]
+            gain, s = best_split(d, prepared_dataset)
             if gain > best_gain:
                 best_gain = gain
                 best_attr = d
                 best_split_set = s
                 best_type = "discrete"
 
-        best_default_route = "left"
+        best_default_route = default_route = "left"
         for c in C:
-            vals = [x[c] for x, _ in U if not _is_missing(x.get(c))]
+            vals = [x[c] for x, _ in U if not is_missing(x.get(c))]
             if not vals or min(vals) == max(vals):
                 continue
-            gain, t, default_route = best_threshold(
-                c, U, self.strategy
-            )  # absurdalna złożoność obliczeniowa - podobno da się inkrementalnie liczyc entropię i nie dzielic zawsze na lewy i prawy zbior; wtedy o(n2) -> o(n)
+            if self.strategy == MissingStrategy.TRIVIAL:
+                gain, t, default_route = best_threshold_trival(c, U)
+            else:        
+                gain, t = best_threshold(c, U)  
             if gain > best_gain:
                 best_gain = gain
                 best_attr = c
@@ -287,10 +199,10 @@ class DecisionTree:
                 best_default_route = default_route
 
         if best_attr is None or best_gain <= 0:
-            return Leaf(_majority(y))
+            return Leaf(majority(y))
 
         # --- budujemy węzeł ---
-        maj = _majority(y)
+        maj = majority(y)
 
         if best_type == "discrete":
             if self.strategy == MissingStrategy.SURROGATE:
@@ -300,7 +212,7 @@ class DecisionTree:
                 id_left = []
                 id_right = []
                 for i, (x, y) in enumerate(U):
-                    if _is_missing(x.get(best_attr)) or x.get(best_attr) == "?":
+                    if is_missing(x.get(best_attr)) or x.get(best_attr) == "?":
                         continue
                     elif x.get(best_attr) in best_split_set:
                         U_left.append((x, y))
@@ -312,12 +224,12 @@ class DecisionTree:
                 U_left = [
                     (x, y)
                     for x, y in U
-                    if not _is_missing(val := x.get(best_attr)) and val in best_split_set
+                    if not is_missing(val := x.get(best_attr)) and val in best_split_set
                 ]
                 U_right = [
                     (x, y)
                     for x, y in U
-                    if not _is_missing(val := x.get(best_attr))
+                    if not is_missing(val := x.get(best_attr))
                     and val not in best_split_set
                 ]
             X_left, y_left = zip(*U_left) if U_left else ([], [])
@@ -341,7 +253,7 @@ class DecisionTree:
                 for i, (x_row, y_row) in enumerate(U):
                     val = x_row.get(best_attr)
                     # brak wartości
-                    if _is_missing(val) or val == "?":
+                    if is_missing(val) or val == "?":
                         continue
 
                     if val <= best_t:
@@ -357,7 +269,7 @@ class DecisionTree:
                     val = x_row.get(best_attr)
 
                     # brak wartości
-                    if _is_missing(val) or val == "?":
+                    if is_missing(val) or val == "?":
 
                         if self.strategy == MissingStrategy.TRIVIAL:
 

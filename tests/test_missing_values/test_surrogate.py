@@ -104,7 +104,7 @@ def test_surrogate_split_returns_continuous_and_discrete_surrogates():
         best_attr="primary",
         U_left_idx=pd.Index([0, 1]),
         U_right_idx=pd.Index([2, 3]),
-        size=5,
+        size=2,
     )
 
     assert len(entries) == 2

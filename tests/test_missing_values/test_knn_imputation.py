@@ -35,7 +35,6 @@ def test_transform_imputes_missing_nominal_and_numeric_values():
             "age": [20, 30, 40, 50],
         }
     )
-    X_missing = pd.DataFrame({"color": [np.nan], "age": [np.nan]}, index=[99])
 
     imputer = CustomKNNImputer(
         n_neighbors=2,
@@ -44,7 +43,10 @@ def test_transform_imputes_missing_nominal_and_numeric_values():
     )
     imputer.fit(X_train)
 
+    X_missing = pd.DataFrame({"color": ["red"], "age": [np.nan]}, index=[99])
     transformed = imputer.transform(X_missing)
-
-    assert transformed.loc[99, "color"] == "red"
     assert transformed.loc[99, "age"] == pytest.approx(25.0)
+
+    X_missing = pd.DataFrame({"color": [np.nan], "age": [45.0]}, index=[99])
+    transformed = imputer.transform(X_missing)
+    assert transformed.loc[99, "color"] == "blue"

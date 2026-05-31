@@ -15,15 +15,13 @@ def test_best_threshold_returns_midpoint_and_left_default():
     y = pd.Series([0, 0, 1, 1])
     dataset = list(zip(X.to_dict(orient="records"), y.to_numpy()))
 
-    gain, threshold, default_route = best_threshold(
+    gain, threshold = best_threshold(
         "feature",
-        dataset,
-        MissingStrategy.MAJORITY,
+        dataset
     )
 
     assert gain == pytest.approx(1.0)
     assert threshold == pytest.approx(1.5)
-    assert default_route == "left"
 
 
 def test_best_split_returns_pure_partition():
@@ -31,7 +29,7 @@ def test_best_split_returns_pure_partition():
     y = pd.Series([0, 0, 1, 1])
     dataset = list(zip(X.to_dict(orient="records"), y.to_numpy()))
 
-    gain, split = best_split("color", dataset, MissingStrategy.MAJORITY)
+    gain, split = best_split("color", dataset)
 
     assert gain == pytest.approx(1.0)
     assert split is not None
