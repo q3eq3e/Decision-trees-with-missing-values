@@ -1,58 +1,77 @@
 import numpy as np
 import pandas as pd
+from typing import Dict, List, Optional
 
 
 class CustomKNNImputer:
     """
-    KNN imputer zgodny z pseudokodem z pracy.
+    K-Nearest Neighbors imputer designed according to the algorithmic
+    specification used in the accompanying research.
 
-    Typy kolumn:
-        nominal_columns     -> dystans 0/1
-        discrete_columns    -> minmax + L1
-        continuous_columns  -> minmax + L1
+    The imputer supports mixed-type datasets and handles:
+    - nominal features (Hamming-like distance)
+    - ordinal features (min-max normalized L1 distance)
+    - continuous features (min-max normalized L1 distance)
+
+    Missing values are handled implicitly during distance computation
+    and imputation from nearest neighbors.
+
+    Parameters
+    ----------
+    n_neighbors : int, default=5
+        Number of nearest neighbors used for imputation.
+
+    discrete_columns : list[str] | None, default=None
+        List of categorical/discrete attributes. These are internally
+        split into nominal and ordinal features depending on dtype.
+
+    continuous_columns : list[str] | None, default=None
+        List of continuous-valued attributes.
     """
 
     def __init__(
         self,
         n_neighbors: int = 5,
-        discrete_columns: list[str] | None = None,
-        continuous_columns: list[str] | None = None,
-    ):
-        self.k = n_neighbors
-        self.discrete_cols_input = discrete_columns or []
-        self.continuous_cols = continuous_columns or []
+        discrete_columns: Optional[List[str]] = None,
+        continuous_columns: Optional[List[str]] = None,
+    ) -> None:
+        self.k: int = n_neighbors
+        self.discrete_cols_input: List[str] = discrete_columns or []
+        self.continuous_cols: List[str] = continuous_columns or []
 
-        # zostaną wykryte w fit()
-        self.nominal_cols = []
-        self.ordinal_cols = []
-        self.numeric_cols = []
+        self.nominal_cols: List[str] = []
+        self.ordinal_cols: List[str] = []
+        self.numeric_cols: List[str] = []
 
-        self.min_ = {}
-        self.max_ = {}
-        self.X_train = None
-        self.train_index_to_pos = None
+        self.min_: Dict[str, float] = {}
+        self.max_: Dict[str, float] = {}
 
-    # ======================================================
-    # FIT
-    # ======================================================
-    def fit(self, X: pd.DataFrame):
+        self.X_train: Optional[pd.DataFrame] = None
+        self.train_index_to_pos: Dict[int, int] = {}
+
+    def fit(self, X: pd.DataFrame) -> "CustomKNNImputer":
+        """
+        Fit imputer on training data.
+
+        - Identifies nominal vs ordinal columns
+        - Computes min/max statistics for normalization
+        - Stores training data for neighbor search
+        """
+
         X = X.copy()
         self.X_train = X
 
-        # 🔹 rozbij discrete -> nominal vs ordinal
         for col in self.discrete_cols_input:
             if pd.api.types.is_numeric_dtype(X[col]):
                 self.ordinal_cols.append(col)
             else:
                 self.nominal_cols.append(col)
 
-        # numeric = ordinal + continuous
         self.numeric_cols = self.ordinal_cols + self.continuous_cols
 
-        # zapamiętaj min/max dla skalowania
         for col in self.numeric_cols:
-            self.min_[col] = X[col].min()
-            self.max_[col] = X[col].max()
+            self.min_[col] = float(X[col].min())
+            self.max_[col] = float(X[col].max())
 
         self.train_index_to_pos = {
             idx: pos for pos, idx in enumerate(self.X_train.index)
@@ -60,10 +79,14 @@ class CustomKNNImputer:
 
         return self
 
-    # ======================================================
-    # MINMAX NORMALIZATION
-    # ======================================================
-    def _normalize_numeric(self, col, values):
+    def _normalize_numeric(
+        self,
+        col: str,
+        values: np.ndarray,
+    ) -> np.ndarray:
+        """
+        Min-max normalization to [0, 1].
+        """
         min_val = self.min_[col]
         max_val = self.max_[col]
 
@@ -72,24 +95,24 @@ class CustomKNNImputer:
 
         return (values - min_val) / (max_val - min_val)
 
-    # ======================================================
-    # DISTANCE RECORD vs MATRIX (VECTORISED)
-    # ======================================================
     def _distance_to_all(self, row: pd.Series) -> np.ndarray:
+        """
+        Computes distance between a single sample and all training samples.
+        """
         X = self.X_train
-        distances = np.zeros(len(X))
+        assert X is not None
 
-        # -------- NOMINAL --------
+        distances = np.zeros(len(X), dtype=float)
+
         for col in self.nominal_cols:
             a = row[col]
             b = X[col].values
 
             missing_mask = pd.isna(a) | pd.isna(b)
             diff = (b != a).astype(float)
-            diff[missing_mask] = 1
+            diff[missing_mask] = 1.0
             distances += diff
 
-        # -------- NUMERIC (discrete + continuous) --------
         for col in self.numeric_cols:
             a = row[col]
             b = X[col].values
@@ -100,15 +123,22 @@ class CustomKNNImputer:
             b_norm = self._normalize_numeric(col, b.astype(float))
 
             diff = np.abs(b_norm - a_norm)
-            diff[missing_mask] = 1
+            diff[missing_mask] = 1.0
             distances += diff
 
         return distances
 
-    # ======================================================
-    # IMPUTE SINGLE COLUMN FROM NEIGHBOURS
-    # ======================================================
-    def _impute_from_neighbors(self, neighbors: pd.DataFrame, column: str):
+    def _impute_from_neighbors(
+        self,
+        neighbors: pd.DataFrame,
+        column: str,
+    ) -> float | str | None:
+        """
+        Imputes a single feature value using nearest neighbors.
+
+        - nominal → mode
+        - numeric → mean
+        """
         col_values = neighbors[column].dropna()
 
         if len(col_values) == 0:
@@ -116,14 +146,17 @@ class CustomKNNImputer:
 
         if column in self.nominal_cols:
             return col_values.mode().iloc[0]
-        else:
-            return col_values.mean()
+        return col_values.mean()
 
-    # ======================================================
-    # TRANSFORM
-    # ======================================================
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Impute missing values using KNN-based strategy.
+        """
         X = X.copy()
+
+        for col in self.nominal_cols + self.ordinal_cols:
+            if col in X.columns:
+                X[col] = X[col].astype("object")
 
         for idx, row in X.iterrows():
             if not row.isna().any():
@@ -135,26 +168,27 @@ class CustomKNNImputer:
                 pos = self.train_index_to_pos[idx]
                 distances[pos] = np.inf
 
-            # kolumny z brakami w aktualnym wierszu
             missing_cols = row.index[row.isna()]
-
-            # kandydaci muszą mieć wartości w tych kolumnach
             valid_mask = ~self.X_train[missing_cols].isna().any(axis=1)
 
-            # unieważnij nieważnych sąsiadów
             distances[~valid_mask.to_numpy()] = np.inf
 
             knn_idx = np.argsort(distances)[: self.k]
             neighbors = self.X_train.iloc[knn_idx]
 
             for col in X.columns:
-                X[col] = X[col].astype("object")
                 if pd.isna(row[col]):
-                    X.at[idx, col] = self._impute_from_neighbors(neighbors, col)
+                    X.at[idx, col] = self._impute_from_neighbors(
+                        neighbors,
+                        col,
+                    )
 
         return X
 
     def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convenience method for fitting and transforming data.
+        """
         self.fit(X)
         self.X_train = X.copy()
         return self.transform(X)
