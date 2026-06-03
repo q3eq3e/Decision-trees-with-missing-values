@@ -41,8 +41,8 @@ class DataPreprocessor:
         X = df.drop(columns=[target])
         y = df[target]
 
-        X.discrete_columns = ["Pclass", "Sex", "Embarked"]
-        X.continuous_columns = ["Age", "SibSp", "Parch", "Fare"]
+        X.attrs["discrete_columns"] = ["Pclass", "Sex", "Embarked"]
+        X.attrs["continuous_columns"] = ["Age", "SibSp", "Parch", "Fare"]
 
         return X, y
 
@@ -72,14 +72,14 @@ class DataPreprocessor:
         X = df.drop(columns=[target])
         y = df[target]
 
-        X.discrete_columns = [
+        X.attrs["discrete_columns"] = [
             "workclass",
             "martial-status",
             "relationship",
             "race",
             "sex",
         ]
-        X.continuous_columns = [
+        X.attrs["continuous_columns"] = [
             "age",
             "fnlwgt",
             "education-num",
@@ -127,8 +127,8 @@ class DataPreprocessor:
         X = df.drop(columns=[target])
         y = df[target]
 
-        X.discrete_columns = ["Make", "Colour"]
-        X.continuous_columns = ["Odometer (KM)", "Doors"]
+        X.attrs["discrete_columns"] = ["Make", "Colour"]
+        X.attrs["continuous_columns"] = ["Odometer (KM)", "Doors"]
 
         return X, y
 
@@ -156,8 +156,8 @@ class DataPreprocessor:
         self, X: pd.DataFrame, y: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         stratify = y if len(y.unique()) < 20 else None
-        disc_cols = getattr(X, "discrete_columns", [])
-        cont_cols = getattr(X, "continuous_columns", [])
+        disc_cols = X.attrs.get("discrete_columns", [])
+        cont_cols = X.attrs.get("continuous_columns", [])
         result_list = train_test_split(
             X,
             y,
@@ -165,10 +165,10 @@ class DataPreprocessor:
             random_state=self.random_state,
             stratify=stratify,
         )
-        result_list[0].discrete_columns = disc_cols
-        result_list[0].continuous_columns = cont_cols
-        result_list[1].discrete_columns = disc_cols
-        result_list[1].continuous_columns = cont_cols
+        result_list[0].attrs["discrete_columns"] = disc_cols
+        result_list[0].attrs["continuous_columns"] = cont_cols
+        result_list[1].attrs["discrete_columns"] = disc_cols
+        result_list[1].attrs["continuous_columns"] = cont_cols
         return result_list
 
     # ======================================================
@@ -181,7 +181,9 @@ class DataPreprocessor:
         return self.split(X, y)
 
 
-def masking(dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42) -> Dataset:
+def masking(
+    dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42
+) -> Dataset:
     if missing_rate <= 0 or column not in dataset.columns:
         return dataset
     np.random.seed(seed)
@@ -189,7 +191,7 @@ def masking(dataset: pd.DataFrame, missing_rate: float, column: str, seed: int =
     for i in range(len(dataset)):
         x = np.random.rand()
         if x < missing_rate:
-            dataset[column].iloc[i] = np.nan
+            dataset.loc[i, column] = np.nan
     # print(dataset.count())
 
     return dataset

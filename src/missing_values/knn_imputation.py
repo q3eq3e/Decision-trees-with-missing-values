@@ -148,6 +148,7 @@ class CustomKNNImputer:
             neighbors = self.X_train.iloc[knn_idx]
 
             for col in X.columns:
+                X[col] = X[col].astype("object")
                 if pd.isna(row[col]):
                     X.at[idx, col] = self._impute_from_neighbors(neighbors, col)
 
