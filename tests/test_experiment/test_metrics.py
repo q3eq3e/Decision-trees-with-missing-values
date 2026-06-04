@@ -15,7 +15,9 @@ def test_perfect_classification():
     assert metrics["accuracy"] == pytest.approx(1.0)
     assert metrics["f1"] == pytest.approx(1.0)
 
-    np.testing.assert_array_equal(metrics["confusion"], np.array([[2, 0], [0, 2]]))
+    np.testing.assert_array_equal(
+        metrics["confusion_matrix"], np.array([[2, 0], [0, 2]])
+    )
 
 
 def test_completely_wrong_binary_classification():
@@ -27,7 +29,9 @@ def test_completely_wrong_binary_classification():
     assert metrics["accuracy"] == pytest.approx(0.0)
     assert metrics["f1"] == pytest.approx(0.0)
 
-    np.testing.assert_array_equal(metrics["confusion"], np.array([[0, 2], [2, 0]]))
+    np.testing.assert_array_equal(
+        metrics["confusion_matrix"], np.array([[0, 2], [2, 0]])
+    )
 
 
 def test_metrics_match_sklearn_reference():
@@ -41,7 +45,7 @@ def test_metrics_match_sklearn_reference():
     assert metrics["f1"] == pytest.approx(f1_score(y_true, y_pred, average="weighted"))
 
     np.testing.assert_array_equal(
-        metrics["confusion"], confusion_matrix(y_true, y_pred)
+        metrics["confusion_matrix"], confusion_matrix(y_true, y_pred)
     )
 
 
@@ -56,7 +60,7 @@ def test_multiclass_classification():
     assert metrics["f1"] == pytest.approx(f1_score(y_true, y_pred, average="weighted"))
 
     np.testing.assert_array_equal(
-        metrics["confusion"], confusion_matrix(y_true, y_pred)
+        metrics["confusion_matrix"], confusion_matrix(y_true, y_pred)
     )
 
 
@@ -72,7 +76,7 @@ def test_single_class_prediction():
         assert metrics["accuracy"] == pytest.approx(1.0)
         assert metrics["f1"] == pytest.approx(1.0)
 
-        np.testing.assert_array_equal(metrics["confusion"], np.array([[4]]))
+        np.testing.assert_array_equal(metrics["confusion_matrix"], np.array([[4]]))
 
 
 def test_returned_dictionary_has_expected_keys():
@@ -81,7 +85,7 @@ def test_returned_dictionary_has_expected_keys():
     assert set(metrics.keys()) == {
         "accuracy",
         "f1",
-        "confusion",
+        "confusion_matrix",
     }
 
 
@@ -91,4 +95,4 @@ def test_confusion_matrix_shape_for_three_classes():
 
     metrics = compute_metrics(y_true, y_pred)
 
-    assert metrics["confusion"].shape == (3, 3)
+    assert metrics["confusion_matrix"].shape == (3, 3)
