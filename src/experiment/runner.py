@@ -1,12 +1,19 @@
 import numpy as np
 from typing import Dict, List, Any
 
-from src.data.preprocessing import DataPreprocessor, Dataset
+from src.data.preprocessing import DataPreprocessor, Dataset, masking
 from src.experiment.metrics import compute_metrics
 from src.tree.id3_tree import DecisionTree, MissingStrategy
 
 
-def run_single(seed: int, dataset_name: Dataset, mode: str) -> Dict[str, Any]:
+def run_single(
+    seed: int,
+    dataset_name: Dataset,
+    mode: str,
+    masking_column: str | None = None,
+    masking_rate: float = 0.0,
+    visualize=False,
+) -> Dict[str, Any]:
     """
     Executes a single experiment run for a given dataset,
     missing-value handling strategy, and random seed.
@@ -26,6 +33,9 @@ def run_single(seed: int, dataset_name: Dataset, mode: str) -> Dict[str, Any]:
         - "surrogate"
         - "impute"
 
+    visualize : bool
+        Prints built tree.
+
     Returns
     -------
     dict
@@ -33,6 +43,11 @@ def run_single(seed: int, dataset_name: Dataset, mode: str) -> Dict[str, Any]:
     """
 
     X, X_test, y, y_test = DataPreprocessor(random_state=seed).prepare(dataset_name)
+
+    print("X:", len(X), "y:", len(y))
+    if masking_column is not None:
+        X = masking(X, masking_rate, masking_column)
+    print("X:", len(X), "y:", len(y))
 
     strategy_mapping: Dict[str, MissingStrategy] = {
         "default": MissingStrategy.MAJORITY,
@@ -56,6 +71,9 @@ def run_single(seed: int, dataset_name: Dataset, mode: str) -> Dict[str, Any]:
     train_pred = tree.predict(X)
     test_pred = tree.predict(X_test)
 
+    if visualize:
+        print(tree)
+
     train_metrics = compute_metrics(y, train_pred)
     test_metrics = compute_metrics(y_test, test_pred)
 
@@ -67,7 +85,12 @@ def run_single(seed: int, dataset_name: Dataset, mode: str) -> Dict[str, Any]:
     }
 
 
-def run_experiment_25(dataset_name: Dataset, mode: str) -> Dict[str, Any]:
+def run_experiment_25(
+    dataset_name: Dataset,
+    mode: str,
+    masking_column: str | None = None,
+    masking_rate: float = 0.0,
+) -> Dict[str, Any]:
     """
     Runs 25 independent experiments with different random seeds
     and aggregates the results.
@@ -89,7 +112,10 @@ def run_experiment_25(dataset_name: Dataset, mode: str) -> Dict[str, Any]:
     seeds: List[int] = list(range(25))
 
     results: List[Dict[str, Any]] = [
-        run_single(seed, dataset_name, mode) for seed in seeds
+        run_single(
+            seed, dataset_name, mode, masking_column, masking_rate, visualize=False
+        )
+        for seed in seeds
     ]
 
     return aggregate_results(results)

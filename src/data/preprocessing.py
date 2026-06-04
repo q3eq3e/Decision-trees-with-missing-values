@@ -181,17 +181,14 @@ class DataPreprocessor:
         return self.split(X, y)
 
 
-def masking(
-    dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42
-) -> Dataset:
+def masking(dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42):
     if missing_rate <= 0 or column not in dataset.columns:
         return dataset
+
     np.random.seed(seed)
-    # print(dataset.count())
-    for i in range(len(dataset)):
-        x = np.random.rand()
-        if x < missing_rate:
-            dataset.loc[i, column] = np.nan
-    # print(dataset.count())
+
+    for idx in dataset.index:
+        if np.random.rand() < missing_rate:
+            dataset.loc[idx, column] = np.nan
 
     return dataset

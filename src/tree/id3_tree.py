@@ -19,10 +19,13 @@ class MissingStrategy(Enum):
     IMPUTATION = 2
     SURROGATE = 3
 
-def best_threshold(
-    attr: str,
-    dataset: list
-) -> Tuple[float, Optional[float]]:
+
+# ---------------------------------------------------------------------------
+# best_threshold – podział atrybutów ciągłych
+# ---------------------------------------------------------------------------
+
+
+def best_threshold(attr: str, dataset: list) -> Tuple[float, Optional[float]]:
 
     prepared = [
         dataset[i] for i in range(len(dataset)) if not is_missing(dataset[i][0][attr])
@@ -63,13 +66,11 @@ def best_threshold(
 
 
 # ---------------------------------------------------------------------------
-# BestSplit – atrybuty dyskretne
+# best_split – podział atrybutów dyskretnych
 # ---------------------------------------------------------------------------
 
 
-def best_split(
-    attr: str, dataset: List
-) -> Tuple[float, Optional[frozenset]]:
+def best_split(attr: str, dataset: List) -> Tuple[float, Optional[frozenset]]:
 
     if not dataset:
         return -math.inf, None
@@ -78,11 +79,7 @@ def best_split(
     if len(values) < 2:
         return -math.inf, None
 
-    best_gain = -math.inf
-    best_s: Optional[frozenset] = None
-
     def recurse(split: frozenset, idx: int) -> Tuple[float, frozenset]:
-        nonlocal best_gain, best_s
         if idx == len(values):
             if not split or split == frozenset(values):
                 return -math.inf, split
@@ -139,7 +136,6 @@ class DecisionTree:
     # ------------------------------------------------------------------
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "DecisionTree":
-        dataset: pd.DataFrame = pd.concat([X, y], axis=1)
         classes = sorted(set(y))
         self.root = self._build(
             classes, self.discrete_attrs, self.continuous_attrs, X, y, self.max_depth
@@ -170,7 +166,7 @@ class DecisionTree:
                 for i in range(len(U)):
                     prepared_dataset.append(U[i])
                     if is_missing(U[i][0][d]):
-                        prepared_dataset[-1][0][d]='?'
+                        prepared_dataset[-1][0][d] = "?"
             else:
                 prepared_dataset = [
                     U[i] for i in range(len(U)) if not is_missing(U[i][0][d])
@@ -189,8 +185,8 @@ class DecisionTree:
                 continue
             if self.strategy == MissingStrategy.TRIVIAL:
                 gain, t, default_route = best_threshold_trival(c, U)
-            else:        
-                gain, t = best_threshold(c, U)  
+            else:
+                gain, t = best_threshold(c, U)
             if gain > best_gain:
                 best_gain = gain
                 best_attr = c
@@ -206,7 +202,7 @@ class DecisionTree:
 
         if best_type == "discrete":
             if self.strategy == MissingStrategy.SURROGATE:
-                
+
                 U_left = []
                 U_right = []
                 id_left = []
@@ -234,7 +230,6 @@ class DecisionTree:
                 ]
             X_left, y_left = zip(*U_left) if U_left else ([], [])
             X_right, y_right = zip(*U_right) if U_right else ([], [])
-            
 
             node = Node(
                 majority_class=maj,
@@ -262,7 +257,7 @@ class DecisionTree:
                     else:
                         U_right.append((x_row, y_row))
                         id_right.append(i)
-                
+
             else:
                 for x_row, y_row in U:
 
@@ -309,7 +304,15 @@ class DecisionTree:
             Y, D, C, pd.DataFrame(X_right), pd.Series(y_right), g - 1
         )
         if self.strategy == MissingStrategy.SURROGATE:
-            node.surrogate_splits = surrogate_split(X, D, C, best_attr, pd.Index(id_left), pd.Index(id_right), self.max_surrogate_splits)
+            node.surrogate_splits = surrogate_split(
+                X,
+                D,
+                C,
+                best_attr,
+                pd.Index(id_left),
+                pd.Index(id_right),
+                self.max_surrogate_splits,
+            )
         return node
 
     # ------------------------------------------------------------------
@@ -329,8 +332,10 @@ class DecisionTree:
                         node = node.right
 
                     continue
-                elif self.strategy == MissingStrategy.SURROGATE and node.surrogate_splits:
-                    node = surrogate_split_predict(node,x)
+                elif (
+                    self.strategy == MissingStrategy.SURROGATE and node.surrogate_splits
+                ):
+                    node = surrogate_split_predict(node, x)
                     continue
                 return node.majority_class
             elif result:
