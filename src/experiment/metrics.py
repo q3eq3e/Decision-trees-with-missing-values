@@ -5,5 +5,5 @@ def compute_metrics(y_true, y_pred):
     return {
         "accuracy": accuracy_score(y_true, y_pred),
         "f1": f1_score(y_true, y_pred, average="weighted"),
-        "confusion": confusion_matrix(y_true, y_pred),
+        "confusion_matrix": confusion_matrix(y_true, y_pred),
     }

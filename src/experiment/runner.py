@@ -39,7 +39,7 @@ def run_single(
     Returns
     -------
     dict
-        Dictionary containing train/test metrics and overfitting gap.
+        Dictionary containing train/test metrics.
     """
 
     X, X_test, y, y_test = DataPreprocessor(random_state=seed).prepare(dataset_name)
@@ -124,7 +124,7 @@ def aggregate_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     Aggregates experiment results across multiple runs.
 
     Computes mean, standard deviation, minimum and maximum
-    for each evaluation metric.
+    for each evaluation metric on training and test sets.
 
     Parameters
     ----------
@@ -134,39 +134,46 @@ def aggregate_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
     Returns
     -------
     dict
-        Summary statistics for each metric.
+        Summary statistics for training metrics, test metrics
+        and train-test performance gaps.
     """
 
-    def extract(metric: str) -> np.ndarray:
-        return np.array([r["test"][metric] for r in results])
+    metrics = [
+        "accuracy",
+        "f1",
+    ]
 
-    summary: Dict[str, Dict[str, float]] = {}
+    summary: Dict[str, Any] = {
+        "train": {},
+        "test": {},
+    }
 
-    for metric in ["accuracy", "f1"]:
-        values = extract(metric)
+    for split in ["train", "test"]:
+        for metric in metrics:
+            values = np.array([r[split][metric] for r in results])
 
-        summary[metric] = {
+            summary[split][metric] = {
+                "mean": float(values.mean()),
+                "std": float(values.std()),
+                "min": float(values.min()),
+                "max": float(values.max()),
+            }
+
+        cms = [r[split]["confusion_matrix"] for r in results]
+
+        summary[split]["confusion_matrix"] = np.sum(
+            cms,
+            axis=0,
+        )
+
+    for gap_metric in ["gap_accuracy", "gap_f1"]:
+        values = np.array([r[gap_metric] for r in results])
+
+        summary[gap_metric] = {
             "mean": float(values.mean()),
             "std": float(values.std()),
             "min": float(values.min()),
             "max": float(values.max()),
         }
-
-    gap_acc = np.array([r["gap_accuracy"] for r in results])
-    gap_f1 = np.array([r["gap_f1"] for r in results])
-
-    summary["gap_accuracy"] = {
-        "mean": float(gap_acc.mean()),
-        "std": float(gap_acc.std()),
-        "min": float(gap_acc.min()),
-        "max": float(gap_acc.max()),
-    }
-
-    summary["gap_f1"] = {
-        "mean": float(gap_f1.mean()),
-        "std": float(gap_f1.std()),
-        "min": float(gap_f1.min()),
-        "max": float(gap_f1.max()),
-    }
 
     return summary

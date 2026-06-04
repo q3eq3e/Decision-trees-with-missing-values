@@ -1,5 +1,6 @@
 import csv
 import json
+import numpy as np
 from typing import Dict, Any, List, Tuple
 
 from src.data.preprocessing import Dataset
@@ -37,30 +38,92 @@ def flatten_result(
         Missing value handling strategy.
 
     result : dict
-        Aggregated experiment results.
+        Aggregated experiment results containing summary
+        statistics for training and test metrics, as well as
+        gap metrics between train and test performance.
+
+        Expected structure:
+
+        {
+            "train": {
+                "accuracy": {...},
+                "f1": {...},
+            },
+            "test": {
+                "accuracy": {...},
+                "f1": {...},
+            },
+            "gap_accuracy": {...},
+            "gap_f1": {...},
+        }
+
+        Additionally, each split contains a confusion matrix:
+
+        {
+            "train": {
+                "accuracy": {...},
+                "f1": {...},
+                "confusion_matrix": ndarray (summed over runs)
+            },
+            "test": {
+                "accuracy": {...},
+                "f1": {...},
+                "confusion_matrix": ndarray (summed over runs)
+            }
+        }
 
     Returns
     -------
     dict
-        Flattened dictionary for tabular storage.
+        Flattened dictionary containing dataset metadata and
+        aggregated scalar statistics for training and test
+        metrics.
+
+        Keys follow the convention:
+
+        <split>_<metric>_<stat>
+
+        Examples:
+        - train_accuracy_mean
+        - test_f1_std
+
+        Gap metrics:
+        - gap_accuracy_mean
+        - gap_accuracy_std
+        - gap_f1_mean
+        - gap_f1_std
+
+        Confusion matrices are not expanded into scalar statistics.
+        They are stored separately (e.g. as JSON or flattened columns
+        depending on implementation) and are not included in the
+        statistical aggregation step.
     """
 
-    row: Dict[str, Any] = {
+    row = {
         "dataset": dataset.name,
         "strategy": strategy,
     }
 
-    for metric in ["accuracy", "f1"]:
-        for stat in ["mean", "std", "min", "max"]:
-            row[f"{metric}_{stat}"] = result[metric][stat]
+    metrics = [
+        "accuracy",
+        "f1",
+    ]
 
-    if "gap_accuracy" in result:
-        row["gap_accuracy_mean"] = result["gap_accuracy"]["mean"]
-        row["gap_accuracy_std"] = result["gap_accuracy"]["std"]
+    for split in ["train", "test"]:
+        for metric in metrics:
+            for stat in ["mean", "std", "min", "max"]:
+                row[f"{split}_{metric}_{stat}"] = result[split][metric][stat]
 
-    if "gap_f1" in result:
-        row["gap_f1_mean"] = result["gap_f1"]["mean"]
-        row["gap_f1_std"] = result["gap_f1"]["std"]
+    for metric in ["gap_accuracy", "gap_f1"]:
+        row[f"{metric}_mean"] = result[metric]["mean"]
+        row[f"{metric}_std"] = result[metric]["std"]
+
+    row["train_confusion_matrix"] = json.dumps(
+        result["train"]["confusion_matrix"].tolist()
+    )
+    row["test_confusion_matrix"] = json.dumps(
+        result["test"]["confusion_matrix"].tolist()
+    )
 
     return row
 
@@ -100,7 +163,7 @@ def run_all() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     return all_results, detailed_results
 
 
-def save_csv(rows: List[Dict[str, Any]], path: str = "results.csv") -> None:
+def save_csv(rows: List[Dict[str, Any]], path: str = "results/results.csv") -> None:
     """
     Saves flattened experiment results to CSV file.
     """
@@ -115,10 +178,23 @@ def save_csv(rows: List[Dict[str, Any]], path: str = "results.csv") -> None:
         writer.writerows(rows)
 
 
-def save_json(data: Dict[str, Any], path: str = "results.txt") -> None:
+def make_json_serializable(obj):
+    if isinstance(obj, dict):
+        return {k: make_json_serializable(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [make_json_serializable(v) for v in obj]
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    return obj
+
+
+def save_json(data: Dict[str, Any], path: str = "results/results.json") -> None:
     """
     Saves full hierarchical experiment results to JSON file.
     """
+
+    data = make_json_serializable(data)
+
     with open(path, "w") as f:
         json.dump(data, f, indent=4)
 
@@ -126,7 +202,7 @@ def save_json(data: Dict[str, Any], path: str = "results.txt") -> None:
 if __name__ == "__main__":
     csv_rows, full_results = run_all()
 
-    save_csv(csv_rows, "results.csv")
-    save_json(full_results, "results.txt")
+    save_csv(csv_rows, "results/results.csv")
+    save_json(full_results, "results/results.json")
 
-    print("Finished experiments ✔")
+    print("Finished experiments")
