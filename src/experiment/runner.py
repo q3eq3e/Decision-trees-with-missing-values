@@ -45,7 +45,7 @@ def run_single(
     X, X_test, y, y_test = DataPreprocessor(random_state=seed).prepare(dataset_name)
 
     if masking_column is not None:
-        X = masking(X, masking_rate, masking_column)
+        X = masking(X, masking_rate, masking_column, seed=seed)
 
     strategy_mapping: Dict[str, MissingStrategy] = {
         "default": MissingStrategy.MAJORITY,
