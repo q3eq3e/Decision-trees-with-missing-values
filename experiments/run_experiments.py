@@ -22,6 +22,7 @@ STRATEGIES: List[str] = [
 
 def flatten_result(
     dataset: Dataset,
+    masking_rate: float,
     strategy: str,
     result: Dict[str, Any],
 ) -> Dict[str, Any]:
@@ -101,6 +102,7 @@ def flatten_result(
 
     row = {
         "dataset": dataset.name,
+        "masking_rate": masking_rate,
         "strategy": strategy,
     }
 
@@ -147,18 +149,28 @@ def run_all() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
 
     for dataset in DATASETS:
         detailed_results[dataset.name] = {}
+        for synteticly_missing_rate in [0, 0.25, 0.5]:
+            detailed_results[dataset.name][synteticly_missing_rate] = {}
+            # Choosing first data column
+            if dataset == Dataset.CARSALES:
+                synteticly_missing_column = "Make"
+            elif dataset == Dataset.ADULT:
+                synteticly_missing_column = "age"
+            else:
+                synteticly_missing_column = "Pclass"
+            for strategy in STRATEGIES:
+                print(f"Running experiment: {dataset.name} | {synteticly_missing_rate} | {strategy}")
 
-        for strategy in STRATEGIES:
-            print(f"Running experiment: {dataset.name} | {strategy}")
+                result = run_experiment_25(
+                    dataset_name=dataset,
+                    mode=strategy,
+                    masking_column=synteticly_missing_column,
+                    masking_rate=synteticly_missing_rate if synteticly_missing_rate else 0.
+                )
 
-            result = run_experiment_25(
-                dataset_name=dataset,
-                mode=strategy,
-            )
+                detailed_results[dataset.name][synteticly_missing_rate][strategy] = result
 
-            detailed_results[dataset.name][strategy] = result
-
-            all_results.append(flatten_result(dataset, strategy, result))
+                all_results.append(flatten_result(dataset, synteticly_missing_rate, strategy, result))
 
     return all_results, detailed_results
 
