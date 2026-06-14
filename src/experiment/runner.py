@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Dict, List, Any
 
+from src.missing_values.knn_imputation import CustomKNNImputer
 from src.data.preprocessing import DataPreprocessor, Dataset, masking
 from src.experiment.metrics import compute_metrics
 from src.tree.id3_tree import DecisionTree, MissingStrategy
@@ -55,6 +56,15 @@ def run_single(
     }
 
     strategy = strategy_mapping[mode]
+
+    if strategy == MissingStrategy.IMPUTATION:
+        imputer = CustomKNNImputer(
+            n_neighbors=2,
+            discrete_columns=X.attrs["discrete_columns"],
+            continuous_columns=X.attrs["continuous_columns"],
+        )
+        X = imputer.fit_transform(X)
+        X_test = imputer.transform(X_test)
 
     tree = DecisionTree(
         discrete_attrs=X.attrs["discrete_columns"],
