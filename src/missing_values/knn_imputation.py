@@ -1,34 +1,11 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import numpy as np
 import pandas as pd
 from typing import Dict, List, Optional
 
 
 class CustomKNNImputer:
-    """
-    K-Nearest Neighbors imputer designed according to the algorithmic
-    specification used in the accompanying research.
-
-    The imputer supports mixed-type datasets and handles:
-    - nominal features (Hamming-like distance)
-    - ordinal features (min-max normalized L1 distance)
-    - continuous features (min-max normalized L1 distance)
-
-    Missing values are handled implicitly during distance computation
-    and imputation from nearest neighbors.
-
-    Parameters
-    ----------
-    n_neighbors : int, default=5
-        Number of nearest neighbors used for imputation.
-
-    discrete_columns : list[str] | None, default=None
-        List of categorical/discrete attributes. These are internally
-        split into nominal and ordinal features depending on dtype.
-
-    continuous_columns : list[str] | None, default=None
-        List of continuous-valued attributes.
-    """
-
     def __init__(
         self,
         n_neighbors: int = 5,
@@ -50,14 +27,6 @@ class CustomKNNImputer:
         self.train_index_to_pos: Dict[int, int] = {}
 
     def fit(self, X: pd.DataFrame) -> "CustomKNNImputer":
-        """
-        Fit imputer on training data.
-
-        - Identifies nominal vs ordinal columns
-        - Computes min/max statistics for normalization
-        - Stores training data for neighbor search
-        """
-
         X = X.copy()
         self.X_train = X
 
@@ -76,7 +45,6 @@ class CustomKNNImputer:
         self.train_index_to_pos = {
             idx: pos for pos, idx in enumerate(self.X_train.index)
         }
-
         return self
 
     def _normalize_numeric(
@@ -186,9 +154,6 @@ class CustomKNNImputer:
         return X
 
     def fit_transform(self, X: pd.DataFrame) -> pd.DataFrame:
-        """
-        Convenience method for fitting and transforming data.
-        """
         self.fit(X)
         self.X_train = X.copy()
         return self.transform(X)
