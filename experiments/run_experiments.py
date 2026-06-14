@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import csv
 import json
 import numpy as np
@@ -26,79 +28,6 @@ def flatten_result(
     strategy: str,
     result: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Converts nested experiment results into a flat structure
-    suitable for CSV export.
-
-    Parameters
-    ----------
-    dataset : Dataset
-        Dataset identifier.
-
-    strategy : str
-        Missing value handling strategy.
-
-    result : dict
-        Aggregated experiment results containing summary
-        statistics for training and test metrics, as well as
-        gap metrics between train and test performance.
-
-        Expected structure:
-
-        {
-            "train": {
-                "accuracy": {...},
-                "f1": {...},
-            },
-            "test": {
-                "accuracy": {...},
-                "f1": {...},
-            },
-            "gap_accuracy": {...},
-            "gap_f1": {...},
-        }
-
-        Additionally, each split contains a confusion matrix:
-
-        {
-            "train": {
-                "accuracy": {...},
-                "f1": {...},
-                "confusion_matrix": ndarray (summed over runs)
-            },
-            "test": {
-                "accuracy": {...},
-                "f1": {...},
-                "confusion_matrix": ndarray (summed over runs)
-            }
-        }
-
-    Returns
-    -------
-    dict
-        Flattened dictionary containing dataset metadata and
-        aggregated scalar statistics for training and test
-        metrics.
-
-        Keys follow the convention:
-
-        <split>_<metric>_<stat>
-
-        Examples:
-        - train_accuracy_mean
-        - test_f1_std
-
-        Gap metrics:
-        - gap_accuracy_mean
-        - gap_accuracy_std
-        - gap_f1_mean
-        - gap_f1_std
-
-        Confusion matrices are not expanded into scalar statistics.
-        They are stored separately (e.g. as JSON or flattened columns
-        depending on implementation) and are not included in the
-        statistical aggregation step.
-    """
 
     row = {
         "dataset": dataset.name,
@@ -126,26 +55,13 @@ def flatten_result(
     row["test_confusion_matrix"] = json.dumps(
         result["test"]["confusion_matrix"].tolist()
     )
-
     return row
 
 
 def run_all() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """
-    Runs full experimental grid:
-    - multiple datasets
-    - multiple missing-value strategies
-    - 25 random seeds per configuration
 
-    Returns
-    -------
-    tuple
-        - flattened results for CSV export
-        - hierarchical results for JSON export
-    """
-
-    all_results: List[Dict[str, Any]] = []
-    detailed_results: Dict[str, Dict[str, Any]] = {}
+    all_results = []
+    detailed_results = {}
 
     for dataset in DATASETS:
         detailed_results[dataset.name] = {}
@@ -176,9 +92,6 @@ def run_all() -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
 
 
 def save_csv(rows: List[Dict[str, Any]], path: str = "results/results.csv") -> None:
-    """
-    Saves flattened experiment results to CSV file.
-    """
     if not rows:
         return
 
@@ -201,9 +114,6 @@ def make_json_serializable(obj):
 
 
 def save_json(data: Dict[str, Any], path: str = "results/results.json") -> None:
-    """
-    Saves full hierarchical experiment results to JSON file.
-    """
 
     data = make_json_serializable(data)
 

@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import numpy as np
 import pytest
 import warnings

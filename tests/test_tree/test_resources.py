@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import math
 import pandas as pd
 import pytest

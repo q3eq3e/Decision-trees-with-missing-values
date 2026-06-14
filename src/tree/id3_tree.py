@@ -1,11 +1,8 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import math
-from collections import Counter
-from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-
-import numpy as np
-
+from enum import Enum
+from typing import Any, List, Optional, Tuple
 from ..missing_values.surrogate import surrogate_split, surrogate_split_predict
 from ..missing_values.trival import best_threshold_trival
 from .node import Leaf, Node
@@ -20,20 +17,15 @@ class MissingStrategy(Enum):
     SURROGATE = 3
 
 
-# ---------------------------------------------------------------------------
-# best_threshold – podział atrybutów ciągłych
-# ---------------------------------------------------------------------------
-
-
 def best_threshold(attr: str, dataset: list) -> Tuple[float, Optional[float]]:
-
+    """
+    Finds the best threshold for a continuous attribute.
+    """
     prepared = [
         dataset[i] for i in range(len(dataset)) if not is_missing(dataset[i][0][attr])
     ]
-
     if len(prepared) < 2:
         return -math.inf, None
-
     sorted_u = sorted(prepared, key=lambda t: t[0][attr])
 
     base_ent = entropy(prepared)
@@ -43,10 +35,8 @@ def best_threshold(attr: str, dataset: list) -> Tuple[float, Optional[float]]:
     best_t = None
 
     for i in range(n - 1):
-
         if sorted_u[i][0][attr] == sorted_u[i + 1][0][attr]:
             continue
-
         t = (sorted_u[i][0][attr] + sorted_u[i + 1][0][attr]) / 2
 
         left = [(x, y) for x, y in sorted_u if x[attr] <= t]
@@ -57,21 +47,16 @@ def best_threshold(attr: str, dataset: list) -> Tuple[float, Optional[float]]:
             - (len(left) / n) * entropy(left)
             - (len(right) / n) * entropy(right)
         )
-
         if gain > best_gain:
             best_gain = gain
             best_t = t
-
     return best_gain, best_t
 
 
-# ---------------------------------------------------------------------------
-# best_split – podział atrybutów dyskretnych
-# ---------------------------------------------------------------------------
-
-
 def best_split(attr: str, dataset: List) -> Tuple[float, Optional[frozenset]]:
-
+    """
+    Finds set that splits the dataset best according to the information gain for a discrete attribute.  
+    """
     if not dataset:
         return -math.inf, None
 
@@ -104,18 +89,6 @@ def best_split(attr: str, dataset: List) -> Tuple[float, Optional[frozenset]]:
 
 
 class DecisionTree:
-    """
-    Drzewo decyzyjne ID3 z parametryzowaną strategią obsługi braków.
-
-    Parameters
-    ----------
-    discrete_attrs : lista nazw atrybutów dyskretnych
-    continuous_attrs : lista nazw atrybutów ciągłych
-    max_depth : maksymalna głębokość drzewa (g)
-    strategy : MissingStrategy – strategia obsługi brakujących wartości
-    max_surrogate_splits : maksymalna liczba surrogate splits
-    """
-
     def __init__(
         self,
         discrete_attrs: List[str],
@@ -129,11 +102,7 @@ class DecisionTree:
         self.max_depth = max_depth
         self.strategy = strategy
         self.root: Any = None
-        self.max_surrogate_splits = max_surrogate_splits
-
-    # ------------------------------------------------------------------
-    # Budowanie
-    # ------------------------------------------------------------------
+        self.max_surrogate_splits: int = max_surrogate_splits
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> "DecisionTree":
         classes = sorted(set(y))
@@ -153,7 +122,6 @@ class DecisionTree:
         if all_same or g == 0:
             return Leaf(majority(y))
 
-        # --- szukamy najlepszego podziału ---
         best_gain = -math.inf
         best_attr = None
         best_type = None  # "discrete" | "continuous"
@@ -197,7 +165,6 @@ class DecisionTree:
         if best_attr is None or best_gain <= 0:
             return Leaf(majority(y))
 
-        # --- budujemy węzeł ---
         maj = majority(y)
 
         if best_type == "discrete":
@@ -247,7 +214,6 @@ class DecisionTree:
                 id_right = []
                 for i, (x_row, y_row) in enumerate(U):
                     val = x_row.get(best_attr)
-                    # brak wartości
                     if is_missing(val) or val == "?":
                         continue
 
@@ -260,19 +226,14 @@ class DecisionTree:
 
             else:
                 for x_row, y_row in U:
-
                     val = x_row.get(best_attr)
 
-                    # brak wartości
                     if is_missing(val) or val == "?":
-
                         if self.strategy == MissingStrategy.TRIVIAL:
-
                             if best_default_route == "left":
                                 U_left.append((x_row, y_row))
                             else:
                                 U_right.append((x_row, y_row))
-
                         continue
 
                     if val <= best_t:
@@ -315,9 +276,6 @@ class DecisionTree:
             )
         return node
 
-    # ------------------------------------------------------------------
-    # Predykcja
-    # ------------------------------------------------------------------
 
     def predict_one(self, x: pd.Series) -> Any:
         node = self.root
@@ -325,12 +283,10 @@ class DecisionTree:
             result = node.condition(x)
             if result is None:
                 if self.strategy == MissingStrategy.TRIVIAL:
-
                     if node.default_route == "left":
                         node = node.left
                     else:
                         node = node.right
-
                     continue
                 elif (
                     self.strategy == MissingStrategy.SURROGATE and node.surrogate_splits
@@ -346,10 +302,6 @@ class DecisionTree:
 
     def predict(self, X: pd.DataFrame) -> List[Any]:
         return [self.predict_one(x[1]) for x in X.iterrows()]
-
-    # ------------------------------------------------------------------
-    # Wizualizacja tekstowa
-    # ------------------------------------------------------------------
 
     def __str__(self) -> str:
         lines: List[str] = []

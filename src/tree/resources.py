@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import math
 from collections import Counter
 from typing import Any

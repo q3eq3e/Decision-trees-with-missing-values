@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import pandas as pd
 
 

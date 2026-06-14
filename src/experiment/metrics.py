@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
 
 

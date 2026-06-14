@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 from types import SimpleNamespace
 
 import pandas as pd

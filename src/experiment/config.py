@@ -1,5 +1,7 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 from dataclasses import dataclass
-from typing import List, Dict
+from typing import List
 
 
 @dataclass
@@ -7,7 +9,6 @@ class DatasetConfig:
     name: str
     path: str
     target_column: str
-    task: str  # "classification" or "regression"
 
 
 @dataclass
@@ -23,19 +24,16 @@ DATASETS: List[DatasetConfig] = [
         name="Titanic",
         path="data/Titanic.csv",
         target_column="Survived",
-        task="classification",
     ),
     DatasetConfig(
         name="CarSales",
         path="data/CarSales.csv",
         target_column="Price",
-        task="regression",
     ),
     DatasetConfig(
         name="Adult",
         path="data/Adult.csv",
         target_column="income",
-        task="classification",
     ),
 ]
 

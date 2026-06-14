@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import warnings
 import argparse
 from src.experiment.runner import run_single
@@ -6,7 +8,6 @@ from src.data.preprocessing import Dataset
 warnings.filterwarnings("ignore")
 
 if __name__ == "__main__":
-    # add argparser to determine dataset from CLI and whether to impute or not
     parser = argparse.ArgumentParser(description="Run experiment on a dataset.")
     parser.add_argument(
         "--dataset",

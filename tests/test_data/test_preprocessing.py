@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import pytest
 import pandas as pd
 from src.data.preprocessing import DataPreprocessor, masking

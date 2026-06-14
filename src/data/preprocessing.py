@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import pandas as pd
 import numpy as np
 from typing import Tuple
@@ -14,26 +16,15 @@ class Dataset(Enum):
 
 
 class DataPreprocessor:
-    """
-    Dataset-aware preprocessing.
-    Nie imputuje braków.
-    Nie koduje na siłę kategorii (drzewo obsługuje mixed types).
-    """
-
     def __init__(self, test_size: float = 0.2, random_state: int = 42):
         self.test_size = test_size
         self.random_state = random_state
 
-    # ======================================================
-    # TITANIC
-    # ======================================================
     def _prepare_titanic(self):
         df = load_titanic()
 
-        # standaryzacja braków
         df = df.replace(["", "?", "NA", "N/A", "na", "null"], np.nan)
 
-        # Age -> zaokrąglenie
         if "Age" in df.columns:
             df["Age"] = df["Age"].round()
 
@@ -46,9 +37,6 @@ class DataPreprocessor:
 
         return X, y
 
-    # ======================================================
-    # ADULT
-    # ======================================================
     def _prepare_adult(self):
         df = load_adult()
 
@@ -90,18 +78,14 @@ class DataPreprocessor:
 
         return X, y
 
-    # ======================================================
-    # CAR SALES
-    # ======================================================
     def _prepare_car(self):
         df = load_car()
 
         df = df.replace(["", "?", "NA", "N/A", "na", "null"], np.nan)
 
-        # usuń brak targetu
+        # drop rows with missing price, since it's our target
         df = df.dropna(subset=["Price"])
 
-        # usunięcie "Rs" i konwersja na int
         df["Price_numeric"] = (
             df["Price"]
             .str.replace("Rs", "", regex=False)
@@ -109,7 +93,7 @@ class DataPreprocessor:
             .astype(float)
         )
 
-        # klasy cenowe
+        # mapping price to classes
         def price_to_class(price):
             if price < 600000:
                 return 0  # tanie
@@ -120,7 +104,7 @@ class DataPreprocessor:
 
         df["Price_class"] = df["Price_numeric"].apply(price_to_class)
 
-        # usuwamy oryginalną cenę
+        # drop original price columns
         df = df.drop(columns=["Price", "Price_numeric"])
 
         target = "Price_class"
@@ -132,11 +116,10 @@ class DataPreprocessor:
 
         return X, y
 
-    # ======================================================
-    # MAIN DISPATCHER
-    # ======================================================
     def load_dataset(self, name: Dataset) -> Tuple[pd.DataFrame, pd.Series]:
-
+        """
+        Main dispatcher
+        """
         if name == Dataset.TITANIC:
             return self._prepare_titanic()
 
@@ -149,12 +132,12 @@ class DataPreprocessor:
         else:
             raise ValueError(f"Unknown dataset: {name}")
 
-    # ======================================================
-    # TRAIN / TEST SPLIT
-    # ======================================================
     def split(
         self, X: pd.DataFrame, y: pd.Series
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """
+        Test-train split with stratification for classification tasks and metadata preservation.
+        """
         stratify = y if len(y.unique()) < 20 else None
         disc_cols = X.attrs.get("discrete_columns", [])
         cont_cols = X.attrs.get("continuous_columns", [])
@@ -171,17 +154,20 @@ class DataPreprocessor:
         result_list[1].attrs["continuous_columns"] = cont_cols
         return result_list
 
-    # ======================================================
-    # FULL PIPELINE
-    # ======================================================
     def prepare(
         self, dataset_name: Dataset
     ) -> Tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """
+        Full preparation pipeline
+        """
         X, y = self.load_dataset(dataset_name)
         return self.split(X, y)
 
 
 def masking(dataset: pd.DataFrame, missing_rate: float, column: str, seed: int = 42):
+    """
+    Randomly masks values in the specified column with NaN according to the given missing rate.
+    """
     if missing_rate <= 0 or column not in dataset.columns:
         return dataset
 

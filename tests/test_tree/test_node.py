@@ -1,3 +1,4 @@
+## authors: Jakub Bagiński, Maciej Borkowski
 
 from src.tree.node import Node
 import pandas as pd

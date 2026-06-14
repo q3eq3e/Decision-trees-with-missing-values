@@ -1,3 +1,5 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import numpy as np
 from typing import Dict, List, Any
 
@@ -14,34 +16,6 @@ def run_single(
     masking_rate: float = 0.0,
     visualize=False,
 ) -> Dict[str, Any]:
-    """
-    Executes a single experiment run for a given dataset,
-    missing-value handling strategy, and random seed.
-
-    Parameters
-    ----------
-    seed : int
-        Random seed controlling dataset split reproducibility.
-
-    dataset_name : Dataset
-        Dataset identifier.
-
-    mode : str
-        Missing value handling strategy name:
-        - "default"
-        - "trivial"
-        - "surrogate"
-        - "impute"
-
-    visualize : bool
-        Prints built tree.
-
-    Returns
-    -------
-    dict
-        Dictionary containing train/test metrics.
-    """
-
     X, X_test, y, y_test = DataPreprocessor(random_state=seed).prepare(dataset_name)
 
     if masking_column is not None and masking_rate is not None and masking_rate > 0:
@@ -92,30 +66,15 @@ def run_experiment_25(
     """
     Runs 25 independent experiments with different random seeds
     and aggregates the results.
-
-    Parameters
-    ----------
-    dataset_name : Dataset
-        Dataset identifier.
-
-    mode : str
-        Missing value handling strategy.
-
-    Returns
-    -------
-    dict
-        Aggregated statistics over 25 runs.
     """
+    seeds = list(range(25))
 
-    seeds: List[int] = list(range(25))
-
-    results: List[Dict[str, Any]] = [
+    results = [
         run_single(
             seed, dataset_name, mode, masking_column, masking_rate, visualize=False
         )
         for seed in seeds
     ]
-
     return aggregate_results(results)
 
 
@@ -125,25 +84,13 @@ def aggregate_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     Computes mean, standard deviation, minimum and maximum
     for each evaluation metric on training and test sets.
-
-    Parameters
-    ----------
-    results : list of dict
-        Output of multiple `run_single` executions.
-
-    Returns
-    -------
-    dict
-        Summary statistics for training metrics, test metrics
-        and train-test performance gaps.
     """
-
     metrics = [
         "accuracy",
         "f1",
     ]
 
-    summary: Dict[str, Any] = {
+    summary = {
         "train": {},
         "test": {},
     }
@@ -158,7 +105,6 @@ def aggregate_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
                 "min": float(values.min()),
                 "max": float(values.max()),
             }
-
         cms = [r[split]["confusion_matrix"] for r in results]
 
         summary[split]["confusion_matrix"] = np.sum(
@@ -168,7 +114,6 @@ def aggregate_results(results: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     for gap_metric in ["gap_accuracy", "gap_f1"]:
         values = np.array([r[gap_metric] for r in results])
-
         summary[gap_metric] = {
             "mean": float(values.mean()),
             "std": float(values.std()),

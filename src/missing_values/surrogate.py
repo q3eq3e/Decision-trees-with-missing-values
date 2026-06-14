@@ -1,3 +1,4 @@
+## authors: Jakub Bagiński, Maciej Borkowski
 
 import numpy as np
 import pandas as pd
@@ -6,34 +7,22 @@ from dataclasses import dataclass
 from typing import Any, List, Optional, Set, Tuple
 from ..tree.resources import is_missing
 
-# ---------------------------------------------------------------------------
-# Data structures
-# ---------------------------------------------------------------------------
-
 @dataclass
 class SurrogateEntry:
     """
     Represents a single surrogate split (continuous or discrete).
-
-    Continuous:  threshold + direction ("left" / "right")
-    Discrete:    split_values (set of values that go left)
     """
     agreement: float
     attribute: str
-    # continuous surrogate fields
+    # not None for continuous surrogate fields
     threshold: Optional[float] = None
     direction: Optional[str] = None   # "left" | "right"
-    # discrete surrogate fields
+    # not None for discrete surrogate fields
     split_values: Optional[Set[Any]] = None
 
-    # heapq is a min-heap; we want a max-heap by agreement, so invert sign
     def __lt__(self, other: "SurrogateEntry") -> bool:
-        return self.agreement > other.agreement   # descending
+        return self.agreement > other.agreement
 
-
-# ---------------------------------------------------------------------------
-# 2.2.3.4  Agreement measure
-# ---------------------------------------------------------------------------
 
 def agreement_measure(
     U_left: pd.Index,
@@ -44,10 +33,7 @@ def agreement_measure(
     """
     AgreementMeasure(U_left, U_lsur, U_right, U_rsur) =
         (|U_left ∩ U_lsur| + |U_right ∩ U_rsur|)
-        / |(U_left ∪ U_right) ∩ (U_lsur ∪ U_rsur)|
-
-    All arguments are pandas Index objects (row labels of the respective sets).
-    Returns 0 if the denominator is zero.
+        / |(U_left U U_right) ∩ (U_lsur U U_rsur)|
     """
     primary_union   = U_left.union(U_right)
     surrogate_union = U_lsur.union(U_rsur)
@@ -61,10 +47,6 @@ def agreement_measure(
     return numer / denom
 
 
-# ---------------------------------------------------------------------------
-# 2.2.3.2  BestSurrogateThreshold  (continuous attribute)
-# ---------------------------------------------------------------------------
-
 def best_surrogate_threshold(
     c: str,
     U: pd.DataFrame,
@@ -74,12 +56,7 @@ def best_surrogate_threshold(
     """
     Finds the threshold t for continuous attribute c that best mimics the
     primary split (U_left, U_right).
-
-    Returns:
-        (best_agreement, best_t, best_direction)
-        best_direction in {"left", "right"} - "left" means U[c] <= t goes left.
     """
-    # Work only on rows that have a value for c
     col = U[c].dropna()
     if col.empty:
         return 0.0, None, "left"
@@ -92,7 +69,6 @@ def best_surrogate_threshold(
     best_direction = "left"
 
     for i in range(len(sorted_idx) - 1):
-        # candidate threshold at every consecutive-pair boundary
         v_i   = sorted_vals.iloc[i]
         v_ip1 = sorted_vals.iloc[i + 1]
         if v_i == v_ip1:
@@ -100,7 +76,6 @@ def best_surrogate_threshold(
 
         t = (v_i + v_ip1) / 2.0
 
-        # U_below: rows in U with c <= t,  U_above: rows with c > t
         col_all = U[c].dropna()
         U_below_idx = col_all[col_all <= t].index
         U_above_idx = col_all[col_all >  t].index
@@ -113,7 +88,6 @@ def best_surrogate_threshold(
             best_t = t
             best_direction = "left"
 
-        # "right" direction: U[c] <= t → right  (i.e. swap surrogate sides)
         inv_agreement = agreement_measure(U_left_idx, U_above_idx,
                                           U_right_idx, U_below_idx)
         if inv_agreement > best_agreement:
@@ -123,10 +97,6 @@ def best_surrogate_threshold(
 
     return best_agreement, best_t, best_direction
 
-
-# ---------------------------------------------------------------------------
-# 2.2.3.3  BestSurrogateSplit  (discrete attribute)
-# ---------------------------------------------------------------------------
 
 def best_surrogate_split(
     d: str,
@@ -140,19 +110,6 @@ def best_surrogate_split(
     """
     Recursively enumerates all subsets of `values` to find the subset
     assignment that maximises agreement with the primary split.
-
-    Parameters
-    ----------
-    d         : discrete column name
-    U         : full dataset (only rows without missing d are considered)
-    U_left_idx, U_right_idx : row-label indices of primary left/right sets
-    split     : current candidate set of values that go left
-    i         : index into `values` currently being decided
-    values    : sorted list of unique values of d (non-missing)
-
-    Returns
-    -------
-    (best_agreement, best_split_frozenset)
     """
     if i == len(values)-1:
         col = U[d].dropna()
@@ -180,10 +137,6 @@ def best_surrogate_split(
     return a2, s2
 
 
-# ---------------------------------------------------------------------------
-# 2.2.3.1  SurrogateSplit  (main finder)
-# ---------------------------------------------------------------------------
-
 def surrogate_split(
     U: pd.DataFrame,
     D: List[str],
@@ -196,22 +149,6 @@ def surrogate_split(
     """
     Finds the top-`size` surrogate splits for a node whose primary split is
     on `best_attr`.
-
-    Column types are inferred directly from the DataFrame:
-      - object / bool / Categorical / string  →  discrete  (BestSurrogateSplit)
-      - numeric                                →  continuous (BestSurrogateThreshold)
-
-    Parameters
-    ----------
-    U            : training rows at this node
-    best_attr    : the primary split attribute (excluded from candidates)
-    U_left_idx   : row labels that went left in the primary split
-    U_right_idx  : row labels that went right in the primary split
-    size         : maximum number of surrogates to keep
-
-    Returns
-    -------
-    List of SurrogateEntry objects sorted by agreement (descending).
     """
     heap: List[Tuple[float, SurrogateEntry]] = []
 
@@ -243,32 +180,14 @@ def surrogate_split(
         _push(SurrogateEntry(agreement=a, attribute=attr,
                                 threshold=t, direction=direction))
 
-        # other dtypes (datetime, etc.) are skipped
-
     return [entry for _, entry in sorted(heap, key=lambda x: -x[1].agreement)]
 
 
-# ---------------------------------------------------------------------------
-# 2.2.3.5  SurrogateSplitPredict
-# ---------------------------------------------------------------------------
-
 def surrogate_split_predict(node: Any, x: pd.Series) -> Any:
     """
-    Traverses the decision tree from `node` to a leaf, using surrogate splits
-    whenever the primary attribute is missing ("?" or NaN).
-
-    Assumes each tree node has:
-        node.attribute      - primary split attribute name
-        node.condition(x)   - callable; True → go left
-        node.left           - left child node
-        node.right          - right child node
-        node.surrogate_splits     - list of SurrogateEntry
-        node.default_route  - "left" | "right" (majority class direction)
-        node.prediction     - leaf prediction value
-        node.is_leaf        - bool
+    Makes decision for a single instance `x` if the value is missing at a node with surrogate splits.
     """
     def _surrogate_condition(entry: SurrogateEntry, x: pd.Series) -> bool:
-        """Returns True if surrogate sends x to the LEFT child."""
         val = x.get(entry.attribute, np.nan)
         if entry.threshold is not None:
             # continuous surrogate

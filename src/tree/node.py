@@ -1,6 +1,8 @@
+## authors: Jakub Bagiński, Maciej Borkowski
+
 import math
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, List, Optional
 import pandas as pd
 
 @dataclass
@@ -16,13 +18,13 @@ class Node:
     majority_class: Any
     condition_attr: str
     is_continuous: bool
-    # dyskretny: zbiór wartości trafiających w lewo
+    # set of attribute values for discrete attributes
     split_set: Optional[frozenset] = None
-    # ciągły: próg
+    # threshold for continuous attributes
     threshold: Optional[float] = None
-    # domyślna gałąź gdy brak wartości atrybutu
+    # default branch when attribute value is missing (used in default mode)
     default_route: str = "left"
-    surrogate_splits = None 
+    surrogate_splits: Optional[List] = None
  
     left:  Any = field(default=None, repr=False)   # Node | Leaf
     right: Any = field(default=None, repr=False)   # Node | Leaf
@@ -31,11 +33,13 @@ class Node:
         return False
  
     def condition(self, x: pd.Series) -> Optional[bool]:
-        """Zwraca True -> lewo, False -> prawo, None -> brak wartości."""
+        """
+        True -> go left
+        False -> go right
+        """
         val = x.get(self.condition_attr)
         if val is None or (isinstance(val, float) and math.isnan(val)):
             return None
         if self.is_continuous:
             return float(val) <= self.threshold
         return val in self.split_set
- 
